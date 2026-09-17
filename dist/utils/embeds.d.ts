@@ -1,4 +1,4 @@
-import { EmbedBuilder, Client } from 'discord.js';
+import { EmbedBuilder, Client, ActionRowBuilder, ButtonBuilder } from 'discord.js';
 export declare const BrandColors: {
     PRIMARY: string;
     SUCCESS: string;
@@ -150,21 +150,33 @@ export declare function createPollEmbed(options: {
     endTime?: Date;
     isActive: boolean;
 }): EmbedBuilder;
+export interface FormattedExecutor {
+    title: string;
+    version: string;
+    platform: string;
+    detected: boolean;
+    updated: boolean;
+    free: boolean;
+    cost?: string;
+    websitelink?: string;
+    discordlink?: string;
+    uncStatus: boolean;
+    suncPercentage?: number;
+    uncPercentage?: number;
+    decompiler?: boolean;
+    multiInject?: boolean;
+    possibleBanwave?: boolean;
+    hasIssues?: boolean;
+    detectionReason?: string;
+    updatedDate?: string;
+    statusEmoji: string;
+    statusText: string;
+    platformEmoji: string;
+}
 export declare function createExecutorsEmbed(options: {
-    executors: {
-        title: string;
-        version: string;
-        platform: string;
-        detected: boolean;
-        updated: boolean;
-        free: boolean;
-        cost?: string;
-        uncStatus: boolean;
-        suncPercentage?: number;
-        statusEmoji: string;
-        statusText: string;
-        platformEmoji: string;
-    }[];
+    executors: FormattedExecutor[];
+    platformFilter?: string;
     lastUpdated: Date;
 }): EmbedBuilder;
+export declare function createExecutorButtons(currentPlatform?: string): ActionRowBuilder<ButtonBuilder>[];
 //# sourceMappingURL=embeds.d.ts.map

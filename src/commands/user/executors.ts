@@ -1,7 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
 import { fetchExecutors, getStatusEmoji, getStatusText, getPlatformEmoji, Executor } from '../../utils/executors.js';
-import { createExecutorsEmbed, createErrorEmbed } from '../../utils/embeds.js';
+import { createExecutorsEmbed, createExecutorButtons, createErrorEmbed } from '../../utils/embeds.js';
 
 // Track active monitors: channelId → interval ID
 const activeMonitors = new Map<string, NodeJS.Timeout>();
@@ -12,7 +12,7 @@ function buildStateKey(execs: Executor[]): string {
   return execs.map(e => `${e.title}:${e.detected}:${e.updateStatus}:${e.version}`).join('|');
 }
 
-function formatExecutorForEmbed(exp: Executor) {
+export function formatExecutorForEmbed(exp: Executor) {
   return {
     title: exp.title,
     version: exp.version,
@@ -21,8 +21,17 @@ function formatExecutorForEmbed(exp: Executor) {
     updated: exp.updateStatus,
     free: exp.free,
     cost: exp.cost,
+    websitelink: exp.websitelink,
+    discordlink: exp.discordlink,
     uncStatus: exp.uncStatus,
     suncPercentage: exp.suncPercentage,
+    uncPercentage: exp.uncPercentage,
+    decompiler: exp.decompiler,
+    multiInject: exp.multiInject,
+    possibleBanwave: exp.possibleBanwave,
+    hasIssues: exp.hasIssues,
+    detectionReason: exp.detectionReason,
+    updatedDate: exp.updatedDate,
     statusEmoji: getStatusEmoji(exp),
     statusText: getStatusText(exp),
     platformEmoji: getPlatformEmoji(exp.platform),
@@ -41,8 +50,9 @@ export default {
         .addChoices(
           { name: 'All', value: 'all' },
           { name: 'Windows', value: 'Windows' },
-          { name: 'Mac', value: 'Mac' },
           { name: 'Android', value: 'Android' },
+          { name: 'Mac', value: 'Mac' },
+          { name: 'iOS', value: 'iOS' },
         )
     ),
 
@@ -52,7 +62,7 @@ export default {
     try {
       const platformFilter = interaction.options.getString('platform') || 'all';
 
-      let executors = await fetchExecutors();
+      const executors = await fetchExecutors();
 
       if (executors.length === 0) {
         await interaction.editReply({
@@ -64,23 +74,15 @@ export default {
         return;
       }
 
-      // Filter by platform if specified
-      if (platformFilter !== 'all') {
-        executors = executors.filter(e => e.platform === platformFilter);
-      }
-
-      // Sort: detected first, then by name
-      executors.sort((a, b) => {
-        if (a.detected !== b.detected) return a.detected ? -1 : 1;
-        return a.title.localeCompare(b.title);
-      });
-
       const embed = createExecutorsEmbed({
         executors: executors.map(formatExecutorForEmbed),
+        platformFilter,
         lastUpdated: new Date(),
       });
 
-      await interaction.editReply({ embeds: [embed] });
+      const components = createExecutorButtons(platformFilter);
+
+      await interaction.editReply({ embeds: [embed], components });
 
       // Set up auto-monitoring for this channel
       const channelId = interaction.channelId;
@@ -116,7 +118,8 @@ export default {
             });
 
             const updatedEmbed = createExecutorsEmbed({
-              executors: filtered.map(formatExecutorForEmbed),
+              executors: freshExecutors.map(formatExecutorForEmbed),
+              platformFilter,
               lastUpdated: new Date(),
             });
 

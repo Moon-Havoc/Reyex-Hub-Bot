@@ -1,7 +1,7 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
 import { fetchExecutors, getStatusEmoji, getStatusText, getPlatformEmoji } from '../../utils/executors.js';
-import { createExecutorsEmbed, createErrorEmbed } from '../../utils/embeds.js';
+import { createExecutorsEmbed, createExecutorButtons, createErrorEmbed } from '../../utils/embeds.js';
 // Track active monitors: channelId → interval ID
 const activeMonitors = new Map();
 // Track last known state per channel for change detection
@@ -9,7 +9,7 @@ const lastState = new Map();
 function buildStateKey(execs) {
     return execs.map(e => `${e.title}:${e.detected}:${e.updateStatus}:${e.version}`).join('|');
 }
-function formatExecutorForEmbed(exp) {
+export function formatExecutorForEmbed(exp) {
     return {
         title: exp.title,
         version: exp.version,
@@ -18,8 +18,17 @@ function formatExecutorForEmbed(exp) {
         updated: exp.updateStatus,
         free: exp.free,
         cost: exp.cost,
+        websitelink: exp.websitelink,
+        discordlink: exp.discordlink,
         uncStatus: exp.uncStatus,
         suncPercentage: exp.suncPercentage,
+        uncPercentage: exp.uncPercentage,
+        decompiler: exp.decompiler,
+        multiInject: exp.multiInject,
+        possibleBanwave: exp.possibleBanwave,
+        hasIssues: exp.hasIssues,
+        detectionReason: exp.detectionReason,
+        updatedDate: exp.updatedDate,
         statusEmoji: getStatusEmoji(exp),
         statusText: getStatusText(exp),
         platformEmoji: getPlatformEmoji(exp.platform),
@@ -33,12 +42,12 @@ export default {
         .setName('platform')
         .setDescription('Filter by platform')
         .setRequired(false)
-        .addChoices({ name: 'All', value: 'all' }, { name: 'Windows', value: 'Windows' }, { name: 'Mac', value: 'Mac' }, { name: 'Android', value: 'Android' })),
+        .addChoices({ name: 'All', value: 'all' }, { name: 'Windows', value: 'Windows' }, { name: 'Android', value: 'Android' }, { name: 'Mac', value: 'Mac' }, { name: 'iOS', value: 'iOS' })),
     async execute(interaction) {
         await interaction.deferReply();
         try {
             const platformFilter = interaction.options.getString('platform') || 'all';
-            let executors = await fetchExecutors();
+            const executors = await fetchExecutors();
             if (executors.length === 0) {
                 await interaction.editReply({
                     embeds: [createErrorEmbed({
@@ -48,21 +57,13 @@ export default {
                 });
                 return;
             }
-            // Filter by platform if specified
-            if (platformFilter !== 'all') {
-                executors = executors.filter(e => e.platform === platformFilter);
-            }
-            // Sort: detected first, then by name
-            executors.sort((a, b) => {
-                if (a.detected !== b.detected)
-                    return a.detected ? -1 : 1;
-                return a.title.localeCompare(b.title);
-            });
             const embed = createExecutorsEmbed({
                 executors: executors.map(formatExecutorForEmbed),
+                platformFilter,
                 lastUpdated: new Date(),
             });
-            await interaction.editReply({ embeds: [embed] });
+            const components = createExecutorButtons(platformFilter);
+            await interaction.editReply({ embeds: [embed], components });
             // Set up auto-monitoring for this channel
             const channelId = interaction.channelId;
             // Clear existing monitor for this channel if any
@@ -91,7 +92,8 @@ export default {
                             return a.title.localeCompare(b.title);
                         });
                         const updatedEmbed = createExecutorsEmbed({
-                            executors: filtered.map(formatExecutorForEmbed),
+                            executors: freshExecutors.map(formatExecutorForEmbed),
+                            platformFilter,
                             lastUpdated: new Date(),
                         });
                         try {

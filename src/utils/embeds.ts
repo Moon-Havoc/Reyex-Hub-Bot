@@ -1,4 +1,4 @@
-import { EmbedBuilder, ColorResolvable, Client } from 'discord.js';
+import { EmbedBuilder, ColorResolvable, Client, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { Logger } from './logger.js';
 
 // Reyex Hub Brand Colors — polished palette
@@ -448,106 +448,277 @@ export function createPollEmbed(options: {
 
 // ─── Executor Status Embed ─────────────────────────────────────
 
+// ─── Executor Status Embed ─────────────────────────────────────
+
+export interface FormattedExecutor {
+  title: string;
+  version: string;
+  platform: string;
+  detected: boolean;
+  updated: boolean;
+  free: boolean;
+  cost?: string;
+  websitelink?: string;
+  discordlink?: string;
+  uncStatus: boolean;
+  suncPercentage?: number;
+  uncPercentage?: number;
+  decompiler?: boolean;
+  multiInject?: boolean;
+  possibleBanwave?: boolean;
+  hasIssues?: boolean;
+  detectionReason?: string;
+  updatedDate?: string;
+  statusEmoji: string;
+  statusText: string;
+  platformEmoji: string;
+}
+
 export function createExecutorsEmbed(options: {
-  executors: {
-    title: string;
-    version: string;
-    platform: string;
-    detected: boolean;
-    updated: boolean;
-    free: boolean;
-    cost?: string;
-    uncStatus: boolean;
-    suncPercentage?: number;
-    statusEmoji: string;
-    statusText: string;
-    platformEmoji: string;
-  }[];
+  executors: FormattedExecutor[];
+  platformFilter?: string;
   lastUpdated: Date;
 }): EmbedBuilder {
   if (options.executors.length === 0) {
     return createBrandedEmbed({
       color: 'WARNING',
-      title: '🔍 Executor Status',
-      description: 'No executor data available at this time.',
+      title: '⚡ Roblox Executor Status Center',
+      description: 'No executor data is available at this time.',
     });
   }
 
   const updated = options.executors.filter(e => e.updated).length;
   const detected = options.executors.filter(e => e.detected).length;
   const pending = options.executors.filter(e => !e.updated && !e.detected).length;
-
-  // Group by platform
-  const platformOrder = ['Windows', 'Mac', 'Android'];
-  const grouped: Record<string, typeof options.executors> = {};
-  for (const exp of options.executors) {
-    const plat = exp.platform || 'Unknown';
-    if (!grouped[plat]) grouped[plat] = [];
-    grouped[plat].push(exp);
-  }
-
+  const filter = options.platformFilter || 'all';
+  const isAll = filter.toLowerCase() === 'all';
   const fields: { name: string; value: string; inline: boolean }[] = [];
 
-  for (const platform of platformOrder) {
-    const execs = grouped[platform];
-    if (!execs || execs.length === 0) continue;
+  if (isAll) {
+    const platformOrder = ['Windows', 'Android', 'Mac', 'iOS'];
+    const grouped: Record<string, FormattedExecutor[]> = {};
+    for (const exp of options.executors) {
+      const plat = exp.platform || 'Other';
+      if (!grouped[plat]) grouped[plat] = [];
+      grouped[plat].push(exp);
+    }
 
-    const platEmoji = execs[0].platformEmoji;
-    const det = execs.filter(e => e.detected);
-    const upd = execs.filter(e => e.updated);
-    const pen = execs.filter(e => !e.updated && !e.detected);
+    for (const platform of platformOrder) {
+      const execs = grouped[platform];
+      if (!execs || execs.length === 0) continue;
 
-    const sections: string[] = [];
+      const platEmoji = execs[0]?.platformEmoji || '💻';
+      
+      // Sort within platform: safe/updated first, then pending, then detected
+      execs.sort((a, b) => {
+        if (a.detected !== b.detected) return a.detected ? 1 : -1;
+        if (a.updated !== b.updated) return a.updated ? -1 : 1;
+        return a.title.localeCompare(b.title);
+      });
 
-    if (det.length > 0) {
-      sections.push(`**🔴 Detected** — ${det.length}`);
-      for (const e of det) {
-        sections.push(`> ${e.title} \`${e.version}\`${e.suncPercentage ? ` • sUNC ${e.suncPercentage}%` : ''}`);
+      const lines = execs.map(e => {
+        const costStr = e.free ? 'Free' : (e.cost ? e.cost.split(' ')[0] : 'Paid');
+        const uncStr = e.suncPercentage ? ` ∙ \`${e.suncPercentage}% sUNC\`` : '';
+        const links: string[] = [];
+        if (e.websitelink) links.push(`[Web](${e.websitelink})`);
+        if (e.discordlink) links.push(`[Discord](${e.discordlink})`);
+        const linkStr = links.length > 0 ? ` ∙ ${links.join(' / ')}` : '';
+        const warnTag = e.detected ? ' ⚠️ *(Detected)*' : '';
+        return `${e.statusEmoji} **${e.title}** \`${e.version || 'Latest'}\` ∙ *${costStr}*${uncStr}${warnTag}${linkStr}`;
+      });
+
+      let currentChunk: string[] = [];
+      let currentLen = 0;
+      let part = 1;
+
+      for (const line of lines) {
+        if (currentLen + line.length + 1 > 950 && currentChunk.length > 0) {
+          fields.push({
+            name: `${platEmoji} ${platform} (${execs.length})${part > 1 ? ` — Part ${part}` : ''}`,
+            value: currentChunk.join('\n'),
+            inline: false,
+          });
+          currentChunk = [];
+          currentLen = 0;
+          part++;
+        }
+        currentChunk.push(line);
+        currentLen += line.length + 1;
+      }
+
+      if (currentChunk.length > 0) {
+        fields.push({
+          name: `${platEmoji} ${platform} (${execs.length})${part > 1 ? ` — Part ${part}` : ''}`,
+          value: currentChunk.join('\n'),
+          inline: false,
+        });
       }
     }
 
-    if (upd.length > 0) {
-      sections.push(`**🟢 Updated** — ${upd.length}`);
-      for (const e of upd) {
-        sections.push(`> ${e.title} \`${e.version}\`${e.suncPercentage ? ` • sUNC ${e.suncPercentage}%` : ''}`);
+    const known = new Set(platformOrder);
+    const other = options.executors.filter(e => !known.has(e.platform));
+    if (other.length > 0) {
+      fields.push({
+        name: `💻 Other (${other.length})`,
+        value: other.map(e => `${e.statusEmoji} **${e.title}** \`${e.version}\``).join('\n'),
+        inline: false,
+      });
+    }
+
+    return createBrandedEmbed({
+      color: detected > 0 ? 'WARNING' : 'SUCCESS',
+      title: '⚡ Roblox Executor Status Center',
+      description: [
+        `Live exploit telemetry powered by [WhatExpsAre.Online](https://whatexpsare.online).`,
+        '',
+        `🟢 **Updated & Working:** \`${updated}\`  ∙  🟡 **Updating:** \`${pending}\`  ∙  🔴 **Detected:** \`${detected}\``,
+        `*Click a platform button below to filter or refresh live data.*`,
+      ].join('\n'),
+      fields,
+      footer: `WhatExpsAre.Online • Updated`,
+      timestamp: true,
+    });
+
+  } else {
+    // Focused single platform view
+    const platExecs = options.executors.filter(
+      e => e.platform.toLowerCase() === filter.toLowerCase()
+    );
+    const platEmoji = platExecs[0]?.platformEmoji || '💻';
+    const platTitle = platExecs[0]?.platform || filter;
+
+    const platUpdated = platExecs.filter(e => e.updated).length;
+    const platDetected = platExecs.filter(e => e.detected).length;
+    const platPending = platExecs.filter(e => !e.updated && !e.detected).length;
+
+    const formatCard = (e: FormattedExecutor) => {
+      const details: string[] = [];
+      const costStr = e.free ? '🟢 Free' : `💎 ${e.cost || 'Paid'}`;
+      details.push(`> 🏷️ **Type:** ${costStr}`);
+      
+      const uncParts: string[] = [];
+      if (e.suncPercentage) uncParts.push(`sUNC: \`${e.suncPercentage}%\``);
+      if (e.uncPercentage) uncParts.push(`UNC: \`${e.uncPercentage}%\``);
+      if (e.decompiler) uncParts.push(`\`Decompiler\``);
+      if (uncParts.length > 0) details.push(`> ⚙️ **Capabilities:** ${uncParts.join(' • ')}`);
+
+      if (e.detected && e.detectionReason) {
+        details.push(`> ⚠️ **Alert:** *${e.detectionReason}*`);
+      }
+
+      const links: string[] = [];
+      if (e.websitelink) links.push(`[Website](${e.websitelink})`);
+      if (e.discordlink) links.push(`[Discord Community](${e.discordlink})`);
+      if (links.length > 0) details.push(`> 🔗 **Links:** ${links.join(' • ')}`);
+
+      return `**${e.statusEmoji} ${e.title}** \`${e.version || 'Latest'}\` — **${e.statusText}**\n${details.join('\n')}`;
+    };
+
+    const detList = platExecs.filter(e => e.detected);
+    if (detList.length > 0) {
+      fields.push({
+        name: `🔴 Detected / Risky (${detList.length})`,
+        value: detList.map(formatCard).join('\n\n'),
+        inline: false,
+      });
+    }
+
+    const updList = platExecs.filter(e => e.updated && !e.detected);
+    if (updList.length > 0) {
+      const cards = updList.map(formatCard);
+      let chunk: string[] = [];
+      let len = 0;
+      let part = 1;
+      for (const card of cards) {
+        if (len + card.length + 2 > 950 && chunk.length > 0) {
+          fields.push({
+            name: `🟢 Working & Safe (${updList.length})${part > 1 ? ` — Part ${part}` : ''}`,
+            value: chunk.join('\n\n'),
+            inline: false,
+          });
+          chunk = [];
+          len = 0;
+          part++;
+        }
+        chunk.push(card);
+        len += card.length + 2;
+      }
+      if (chunk.length > 0) {
+        fields.push({
+          name: `🟢 Working & Safe (${updList.length})${part > 1 ? ` — Part ${part}` : ''}`,
+          value: chunk.join('\n\n'),
+          inline: false,
+        });
       }
     }
 
-    if (pen.length > 0) {
-      sections.push(`**🟡 Pending** — ${pen.length}`);
-      for (const e of pen) {
-        sections.push(`> ${e.title} \`${e.version}\`${e.suncPercentage ? ` • sUNC ${e.suncPercentage}%` : ''}`);
-      }
+    const penList = platExecs.filter(e => !e.updated && !e.detected);
+    if (penList.length > 0) {
+      fields.push({
+        name: `🟡 Pending Developer Update (${penList.length})`,
+        value: penList.map(formatCard).join('\n\n'),
+        inline: false,
+      });
     }
 
-    fields.push({
-      name: `${platEmoji} ${platform} (${execs.length})`,
-      value: sections.join('\n'),
-      inline: false,
+    return createBrandedEmbed({
+      color: platDetected > 0 ? 'WARNING' : 'SUCCESS',
+      title: `${platEmoji} ${platTitle} Executor Status`,
+      description: [
+        `Live status and safety telemetry for **${platTitle}** executors.`,
+        '',
+        `🟢 **Working:** \`${platUpdated}\`  ∙  🟡 **Updating:** \`${platPending}\`  ∙  🔴 **Detected:** \`${platDetected}\``,
+      ].join('\n'),
+      fields,
+      footer: `WhatExpsAre.Online • ${platExecs.length} ${platTitle} executors monitored`,
+      timestamp: true,
     });
   }
+}
 
-  // Unknown platforms
-  const knownPlatforms = new Set(platformOrder);
-  const unknown = options.executors.filter(e => !knownPlatforms.has(e.platform));
-  if (unknown.length > 0) {
-    const lines = unknown.map(e => `> ${e.title} \`${e.version}\`${e.suncPercentage ? ` • sUNC ${e.suncPercentage}%` : ''}`);
-    fields.push({
-      name: `💻 Other (${unknown.length})`,
-      value: lines.join('\n'),
-      inline: false,
-    });
-  }
+export function createExecutorButtons(currentPlatform: string = 'all'): ActionRowBuilder<ButtonBuilder>[] {
+  const norm = (currentPlatform || 'all').toLowerCase();
 
-  return createBrandedEmbed({
-    color: detected > 0 ? 'WARNING' : 'SUCCESS',
-    title: '🔍 Executor Status',
-    description: [
-      `Live status from [WhatExpsAre.Online](https://whatexpsare.online)`,
-      '',
-      `🟢 Updated **${updated}**  •  🔴 Detected **${detected}**  •  🟡 Pending **${pending}**`,
-    ].join('\n'),
-    fields,
-    footer: `Auto-refreshes on change • ${options.executors.length} total executors`,
-  });
+  const filterRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId('exec_filter_all')
+      .setLabel('All')
+      .setEmoji('🌐')
+      .setStyle(norm === 'all' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('exec_filter_Windows')
+      .setLabel('Windows')
+      .setEmoji('🪟')
+      .setStyle(norm === 'windows' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('exec_filter_Android')
+      .setLabel('Android')
+      .setEmoji('🤖')
+      .setStyle(norm === 'android' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('exec_filter_Mac')
+      .setLabel('macOS')
+      .setEmoji('🍎')
+      .setStyle(norm === 'mac' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+    new ButtonBuilder()
+      .setCustomId('exec_filter_iOS')
+      .setLabel('iOS')
+      .setEmoji('📱')
+      .setStyle(norm === 'ios' ? ButtonStyle.Primary : ButtonStyle.Secondary),
+  );
+
+  const actionRow = new ActionRowBuilder<ButtonBuilder>().addComponents(
+    new ButtonBuilder()
+      .setCustomId(`exec_refresh_${currentPlatform || 'all'}`)
+      .setLabel('Refresh Live Status')
+      .setEmoji('🔄')
+      .setStyle(ButtonStyle.Success),
+    new ButtonBuilder()
+      .setLabel('WhatExpsAre.Online')
+      .setStyle(ButtonStyle.Link)
+      .setURL('https://whatexpsare.online/')
+      .setEmoji('🔗')
+  );
+
+  return [filterRow, actionRow];
 }

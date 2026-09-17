@@ -1,7 +1,9 @@
 import { Events, Interaction } from 'discord.js';
 import { Logger } from '../utils/logger.js';
 import Poll from '../models/Poll.js';
-import { createPollEmbed } from '../utils/embeds.js';
+import { createPollEmbed, createExecutorsEmbed, createExecutorButtons } from '../utils/embeds.js';
+import { fetchExecutors } from '../utils/executors.js';
+import { formatExecutorForEmbed } from '../commands/user/executors.js';
 
 export default {
   name: Events.InteractionCreate,
@@ -31,15 +33,56 @@ export default {
       return;
     }
 
-    // Handle button interactions (poll voting)
+    // Handle button interactions (poll voting, executor filters)
     if (interaction.isButton()) {
       if (interaction.customId.startsWith('poll_vote_')) {
         await handlePollVote(interaction);
+        return;
+      }
+      if (interaction.customId.startsWith('exec_filter_') || interaction.customId.startsWith('exec_refresh_')) {
+        await handleExecutorButton(interaction);
+        return;
       }
       return;
     }
   },
 };
+
+async function handleExecutorButton(interaction: any) {
+  try {
+    let platform = 'all';
+    if (interaction.customId.startsWith('exec_filter_')) {
+      platform = interaction.customId.replace('exec_filter_', '');
+    } else if (interaction.customId.startsWith('exec_refresh_')) {
+      platform = interaction.customId.replace('exec_refresh_', '');
+    }
+
+    const executors = await fetchExecutors();
+    if (executors.length === 0) {
+      await interaction.reply({ content: 'Could not connect to WhatExpsAre.Online API at this moment.', ephemeral: true });
+      return;
+    }
+
+    const embed = createExecutorsEmbed({
+      executors: executors.map(formatExecutorForEmbed),
+      platformFilter: platform,
+      lastUpdated: new Date(),
+    });
+
+    const components = createExecutorButtons(platform);
+
+    await interaction.update({ embeds: [embed], components });
+  } catch (error) {
+    Logger.error('Error handling executor button:', error);
+    try {
+      if (!interaction.replied && !interaction.deferred) {
+        await interaction.reply({ content: 'An error occurred while updating the status.', ephemeral: true });
+      }
+    } catch {
+      // Ignored
+    }
+  }
+}
 
 async function handlePollVote(interaction: any) {
   try {
