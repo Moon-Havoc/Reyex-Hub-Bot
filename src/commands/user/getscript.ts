@@ -1,4 +1,4 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
 import User from '../../models/User.js';
 import Game from '../../models/Game.js';
@@ -88,7 +88,18 @@ export default {
         mobileCompatible: game.mobileCompatible,
       });
 
-      await interaction.editReply({ embeds: [scriptEmbed] });
+      const components: any[] = [];
+      if (game.scriptUrl.startsWith('http://') || game.scriptUrl.startsWith('https://')) {
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setLabel('Open Raw Script')
+            .setStyle(ButtonStyle.Link)
+            .setURL(game.scriptUrl)
+        );
+        components.push(row);
+      }
+
+      await interaction.editReply({ embeds: [scriptEmbed], components });
       Logger.info(`User ${interaction.user.tag} retrieved script for ${gameName}`);
 
     } catch (error) {

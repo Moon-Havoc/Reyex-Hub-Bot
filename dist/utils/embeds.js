@@ -127,18 +127,30 @@ export function createGameEmbed(options) {
     if (options.mobileCompatible)
         tags.push('Mobile Compatible');
     const tagStr = tags.length > 0 ? `\n> ${tags.join(' • ')}` : '';
+    const isHttp = options.scriptUrl.startsWith('http://') || options.scriptUrl.startsWith('https://');
+    const loadstringCode = isHttp
+        ? `loadstring(game:HttpGet("${options.scriptUrl}"))()`
+        : options.scriptUrl;
+    const fields = [
+        {
+            name: '📜 Loadstring (Roblox Executor)',
+            value: `\`\`\`lua\n${loadstringCode}\n\`\`\``,
+            inline: false,
+        },
+    ];
+    if (isHttp) {
+        fields.push({
+            name: '🔗 Raw Script URL',
+            value: `[Click to view raw script](${options.scriptUrl})`,
+            inline: false,
+        });
+    }
     return createBrandedEmbed({
         color: 'PRIMARY',
         title: `🎮 ${options.gameName}`,
         description: `> ${options.description}${tagStr}\n\n📂 **${options.category}**`,
-        fields: [
-            {
-                name: '📜 Script',
-                value: `\`\`\`\n${options.scriptUrl}\n\`\`\``,
-                inline: false,
-            },
-        ],
-        footer: 'Copy the script URL and paste it into your executor.',
+        fields,
+        footer: 'Copy the loadstring code above and execute it in your script executor.',
     });
 }
 export function createGamesListEmbed(options) {

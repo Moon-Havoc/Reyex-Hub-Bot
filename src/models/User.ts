@@ -85,8 +85,6 @@ const UserSchema = new mongoose.Schema<IUser>({
 });
 
 // Index for faster queries
-UserSchema.index({ discordId: 1 });
-UserSchema.index({ robloxId: 1 });
 UserSchema.index({ isVerified: 1 });
 
 export default mongoose.model<IUser>('User', UserSchema);

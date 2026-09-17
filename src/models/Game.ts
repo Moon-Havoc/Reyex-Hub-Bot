@@ -69,7 +69,6 @@ const GameSchema = new mongoose.Schema<IGame>({
 });
 
 // Index for faster queries
-GameSchema.index({ name: 1 });
 GameSchema.index({ category: 1 });
 GameSchema.index({ isActive: 1 });
 
