@@ -1,0 +1,10 @@
+const STAFF_ROLE_ID = '1549497563688992828';
+const OWNER_ROLE_ID = '1549497563688992828';
+export function isStaff(member) {
+    return member.roles.cache.has(STAFF_ROLE_ID);
+}
+export function isOwner(member) {
+    return member.roles.cache.has(OWNER_ROLE_ID);
+}
+export { STAFF_ROLE_ID, OWNER_ROLE_ID };
+//# sourceMappingURL=permissions.js.map

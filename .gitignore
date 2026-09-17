@@ -6,7 +6,6 @@ yarn.lock
 .env
 
 # Build output
-dist/
 build/
 
 # Logs
@@ -75,7 +74,6 @@ out/
 
 # Nuxt.js build / generate output
 .nuxt/
-dist/
 
 # Gatsby files
 .cache/

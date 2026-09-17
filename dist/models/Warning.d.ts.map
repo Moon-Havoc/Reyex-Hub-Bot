@@ -1,0 +1,1 @@
+{"version":3,"file":"Warning.d.ts","sourceRoot":"","sources":["../../src/models/Warning.ts"],"names":[],"mappings":"AAAA,OAAO,QAAQ,MAAM,UAAU,CAAC;AAEhC,MAAM,WAAW,QAAS,SAAQ,QAAQ,CAAC,QAAQ;IACjD,SAAS,EAAE,MAAM,CAAC;IAClB,WAAW,EAAE,MAAM,CAAC;IACpB,MAAM,EAAE,MAAM,CAAC;IACf,SAAS,EAAE,IAAI,CAAC;IAChB,MAAM,EAAE,OAAO,CAAC;CACjB"}
