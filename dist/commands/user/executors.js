@@ -1,13 +1,17 @@
 import { SlashCommandBuilder } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
-import { fetchExecutors, getStatusEmoji, getStatusText, getPlatformEmoji } from '../../utils/executors.js';
+import { fetchExecutors, getStatusEmoji, getStatusText, getPlatformEmoji, } from '../../utils/executors.js';
 import { createExecutorsEmbed, createExecutorButtons, createErrorEmbed } from '../../utils/embeds.js';
-// Track active monitors: channelId → interval ID
+// ─── Per-channel auto-monitor state ───────────────────────────
+// channelId → interval handle
 const activeMonitors = new Map();
-// Track last known state per channel for change detection
+// channelId → last state fingerprint (for change detection)
 const lastState = new Map();
+/** Fingerprint that captures every field that can change status */
 function buildStateKey(execs) {
-    return execs.map(e => `${e.title}:${e.detected}:${e.updateStatus}:${e.version}`).join('|');
+    return execs
+        .map(e => `${e.title}:${e.detected}:${e.updateStatus}:${e.unknown}:${e.unknownDetection}:${e.version}:${e.hasIssues}:${e.possibleBanwave}`)
+        .join('|');
 }
 export function formatExecutorForEmbed(exp) {
     return {
@@ -16,8 +20,11 @@ export function formatExecutorForEmbed(exp) {
         platform: exp.platform,
         detected: exp.detected,
         updated: exp.updateStatus,
+        unknown: exp.unknown,
+        unknownDetection: exp.unknownDetection,
         free: exp.free,
         cost: exp.cost,
+        purchaselink: exp.purchaselink,
         websitelink: exp.websitelink,
         discordlink: exp.discordlink,
         uncStatus: exp.uncStatus,
@@ -25,10 +32,16 @@ export function formatExecutorForEmbed(exp) {
         uncPercentage: exp.uncPercentage,
         decompiler: exp.decompiler,
         multiInject: exp.multiInject,
+        clientmods: exp.clientmods,
+        raknet: exp.raknet,
+        keysystem: exp.keysystem,
+        beta: exp.beta,
         possibleBanwave: exp.possibleBanwave,
         hasIssues: exp.hasIssues,
         detectionReason: exp.detectionReason,
         updatedDate: exp.updatedDate,
+        rbxversion: exp.rbxversion,
+        index: exp.index,
         statusEmoji: getStatusEmoji(exp),
         statusText: getStatusText(exp),
         platformEmoji: getPlatformEmoji(exp.platform),
@@ -37,22 +50,22 @@ export function formatExecutorForEmbed(exp) {
 export default {
     data: new SlashCommandBuilder()
         .setName('executors')
-        .setDescription('Show live Roblox executor statuses from WhatExpsAre.Online')
-        .addStringOption(option => option
+        .setDescription('Live Roblox executor statuses from WhatExpsAre.Online')
+        .addStringOption(opt => opt
         .setName('platform')
-        .setDescription('Filter by platform')
+        .setDescription('Filter by platform (default: all)')
         .setRequired(false)
-        .addChoices({ name: 'All', value: 'all' }, { name: 'Windows', value: 'Windows' }, { name: 'Android', value: 'Android' }, { name: 'Mac', value: 'Mac' }, { name: 'iOS', value: 'iOS' })),
+        .addChoices({ name: '🌐  All', value: 'all' }, { name: '🪟  Windows', value: 'Windows' }, { name: '🤖  Android', value: 'Android' }, { name: '🍎  Mac', value: 'Mac' }, { name: '📱  iOS', value: 'iOS' })),
     async execute(interaction) {
         await interaction.deferReply();
+        const platformFilter = interaction.options.getString('platform') ?? 'all';
         try {
-            const platformFilter = interaction.options.getString('platform') || 'all';
             const executors = await fetchExecutors();
             if (executors.length === 0) {
                 await interaction.editReply({
                     embeds: [createErrorEmbed({
-                            title: 'API Error',
-                            description: 'Could not fetch executor data from WhatExpsAre.Online. The site may be down.',
+                            title: 'API Unavailable',
+                            description: 'Could not fetch data from WhatExpsAre.Online. The API may be down — try again in a moment.',
                         })],
                 });
                 return;
@@ -64,59 +77,43 @@ export default {
             });
             const components = createExecutorButtons(platformFilter);
             await interaction.editReply({ embeds: [embed], components });
-            // Set up auto-monitoring for this channel
+            // ── Auto-monitor: re-fetch every 30s, edit message on state change ──
             const channelId = interaction.channelId;
-            // Clear existing monitor for this channel if any
-            if (activeMonitors.has(channelId)) {
-                clearInterval(activeMonitors.get(channelId));
-            }
-            // Store initial state
+            // Clear any existing monitor for this channel
+            const existing = activeMonitors.get(channelId);
+            if (existing)
+                clearInterval(existing);
             lastState.set(channelId, buildStateKey(executors));
-            // Set up interval to check for changes every 30 seconds
             const interval = setInterval(async () => {
                 try {
-                    const freshExecutors = await fetchExecutors();
-                    if (freshExecutors.length === 0)
+                    const fresh = await fetchExecutors();
+                    if (fresh.length === 0)
                         return;
-                    const currentState = buildStateKey(freshExecutors);
-                    const prevState = lastState.get(channelId);
-                    if (currentState !== prevState) {
-                        lastState.set(channelId, currentState);
-                        let filtered = freshExecutors;
-                        if (platformFilter !== 'all') {
-                            filtered = freshExecutors.filter(e => e.platform === platformFilter);
-                        }
-                        filtered.sort((a, b) => {
-                            if (a.detected !== b.detected)
-                                return a.detected ? -1 : 1;
-                            return a.title.localeCompare(b.title);
-                        });
-                        const updatedEmbed = createExecutorsEmbed({
-                            executors: freshExecutors.map(formatExecutorForEmbed),
-                            platformFilter,
-                            lastUpdated: new Date(),
-                        });
-                        try {
-                            const channel = await interaction.client.channels.fetch(channelId);
-                            if (channel && 'messages' in channel) {
-                                const message = await channel.messages.fetch(interaction.id);
-                                if (message) {
-                                    await message.edit({ embeds: [updatedEmbed] });
-                                }
-                            }
-                        }
-                        catch {
-                            // Message may have been deleted, stop monitoring
-                            clearInterval(interval);
-                            activeMonitors.delete(channelId);
-                            lastState.delete(channelId);
-                        }
+                    const key = buildStateKey(fresh);
+                    if (key === lastState.get(channelId))
+                        return; // nothing changed
+                    lastState.set(channelId, key);
+                    const updatedEmbed = createExecutorsEmbed({
+                        executors: fresh.map(formatExecutorForEmbed),
+                        platformFilter,
+                        lastUpdated: new Date(),
+                    });
+                    // Fetch the original reply message and edit it
+                    try {
+                        const msg = await interaction.fetchReply();
+                        await msg.edit({ embeds: [updatedEmbed], components: createExecutorButtons(platformFilter) });
+                    }
+                    catch {
+                        // Message deleted — stop monitoring
+                        clearInterval(interval);
+                        activeMonitors.delete(channelId);
+                        lastState.delete(channelId);
                     }
                 }
-                catch (error) {
-                    Logger.error('Error checking executor statuses:', error);
+                catch (err) {
+                    Logger.error('Executor monitor poll error', err);
                 }
-            }, 30000);
+            }, 30_000);
             activeMonitors.set(channelId, interval);
             // Auto-cleanup after 15 minutes
             setTimeout(() => {
@@ -125,11 +122,11 @@ export default {
                     activeMonitors.delete(channelId);
                     lastState.delete(channelId);
                 }
-            }, 15 * 60 * 1000);
-            Logger.info(`Executor status viewed by ${interaction.user.tag} (platform: ${platformFilter})`);
+            }, 15 * 60 * 1_000);
+            Logger.info(`Executors viewed by ${interaction.user.tag} (platform: ${platformFilter})`);
         }
         catch (error) {
-            Logger.error('Error in executors command:', error);
+            Logger.error('Error in /executors', error);
             await interaction.editReply({
                 embeds: [createErrorEmbed({
                         title: 'Error',

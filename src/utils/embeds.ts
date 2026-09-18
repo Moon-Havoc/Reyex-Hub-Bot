@@ -617,27 +617,36 @@ export function createModLogEmbed(options: {
 // ─── Executor Status Embeds ───────────────────────────────────
 
 export interface ExecutorDisplay {
-  title:          string;
-  version:        string;
-  platform:       string;
-  detected:       boolean;
-  updated:        boolean;
-  free:           boolean;
-  cost?:          string;
-  websitelink?:   string;
-  discordlink?:   string;
-  uncStatus:      boolean;
-  suncPercentage?: number;
-  uncPercentage?:  number;
-  decompiler?:    boolean;
-  multiInject?:   boolean;
+  title:            string;
+  version:          string;
+  platform:         string;
+  detected:         boolean;
+  updated:          boolean;   // updateStatus
+  unknown:          boolean;
+  unknownDetection: boolean;
+  free:             boolean;
+  cost?:            string;
+  purchaselink?:    string;
+  websitelink?:     string;
+  discordlink?:     string;
+  uncStatus:        boolean;
+  suncPercentage?:  number;
+  uncPercentage?:   number;
+  decompiler?:      boolean;
+  multiInject?:     boolean;
+  clientmods?:      boolean;
+  raknet?:          boolean;
+  keysystem?:       boolean;
+  beta?:            boolean;
   possibleBanwave?: boolean;
-  hasIssues?:     boolean;
+  hasIssues?:       boolean;
   detectionReason?: string;
-  updatedDate:    string;
-  statusEmoji:    string;
-  statusText:     string;
-  platformEmoji:  string;
+  updatedDate:      string;
+  rbxversion?:      string;
+  index:            number;   // WEAO display order
+  statusEmoji:      string;
+  statusText:       string;
+  platformEmoji:    string;
 }
 
 export function createExecutorsEmbed(options: {
@@ -647,19 +656,22 @@ export function createExecutorsEmbed(options: {
 }): EmbedBuilder {
   const { executors, platformFilter, lastUpdated } = options;
 
-  let filtered = platformFilter === 'all'
-    ? executors
+  // Filter by platform
+  const filtered = platformFilter === 'all'
+    ? [...executors]
     : executors.filter(e => e.platform.toLowerCase() === platformFilter.toLowerCase());
 
-  filtered = [...filtered].sort((a, b) => {
-    // Detected first, then by name
-    if (a.detected !== b.detected) return a.detected ? -1 : 1;
+  // Sort by WEAO's own index (their intended display order), then name as tiebreak
+  filtered.sort((a, b) => {
+    if (a.index !== b.index) return a.index - b.index;
     return a.title.localeCompare(b.title);
   });
 
   const total    = filtered.length;
-  const safe     = filtered.filter(e => !e.detected).length;
+  const updated  = filtered.filter(e => !e.detected && e.updated).length;
   const detected = filtered.filter(e => e.detected).length;
+  const pending  = filtered.filter(e => !e.detected && !e.updated && !e.unknown && !e.unknownDetection).length;
+  const unknown  = filtered.filter(e => e.unknown || e.unknownDetection).length;
 
   if (total === 0) {
     return createBrandedEmbed({
@@ -670,47 +682,68 @@ export function createExecutorsEmbed(options: {
     });
   }
 
+  // Build a compact line per executor
   const lines = filtered.map(e => {
-    const parts: string[] = [
-      `${e.statusEmoji} **${e.title}**`,
-      `\`v${e.version}\``,
-    ];
-    if (e.free)  parts.push('🆓');
-    else if (e.cost) parts.push(`💰 ${e.cost}`);
-    if (e.possibleBanwave) parts.push('⚠️ Banwave');
-    if (e.hasIssues)       parts.push('🐛 Issues');
-    if (e.detectionReason) parts.push(`*(${e.detectionReason})*`);
-    return parts.join('  ');
+    const badges: string[] = [];
+    if (e.free)            badges.push('🆓');
+    else if (e.cost)       badges.push(`💰 ${e.cost}`);
+    if (e.keysystem)       badges.push('🔑');
+    if (e.beta)            badges.push('🧪');
+    if (e.possibleBanwave) badges.push('⚠️');
+    if (e.hasIssues)       badges.push('🐛');
+    if (e.detectionReason) badges.push(`*(${e.detectionReason})*`);
+
+    const sunc = e.suncPercentage !== undefined ? ` sUNC:${e.suncPercentage}%` : '';
+    const badgeStr = badges.length ? `  ${badges.join(' ')}` : '';
+
+    return `${e.statusEmoji} **${e.title}** \`v${e.version}\`${sunc}${badgeStr}`;
   });
 
-  // Split into at most 2 columns of fields for readability
-  const half  = Math.ceil(lines.length / 2);
-  const col1  = lines.slice(0, half).join('\n');
-  const col2  = lines.slice(half).join('\n');
+  // Split into at most 2 columns
+  const half = Math.ceil(lines.length / 2);
+  const col1 = lines.slice(0, half).join('\n');
+  const col2 = lines.slice(half).join('\n');
+
+  const colLabel = platformFilter === 'all' ? 'All Platforms' : platformFilter;
 
   const fields: { name: string; value: string; inline?: boolean }[] = [
-    { name: `${platformFilter === 'all' ? 'All Platforms' : platformFilter} (1)`, value: col1 || '—', inline: true },
+    { name: `${colLabel} (1/${col2 ? '2' : '1'})`, value: col1 || '—', inline: true },
   ];
   if (col2) {
-    fields.push({ name: `${platformFilter === 'all' ? 'All Platforms' : platformFilter} (2)`, value: col2, inline: true });
+    fields.push({ name: `${colLabel} (2/2)`, value: col2, inline: true });
   }
+
+  // Status summary bar
+  const summaryParts = [
+    `🟢 Updated: **${updated}**`,
+    `🔴 Detected: **${detected}**`,
+    `🟡 Pending: **${pending}**`,
+    ...(unknown > 0 ? [`❔ Unknown: **${unknown}**`] : []),
+    `Total: **${total}**`,
+  ];
 
   fields.push({
     name:   '📊  Summary',
-    value:  `🟢 Safe: **${safe}**  •  🔴 Detected: **${detected}**  •  Total: **${total}**\nData: [WhatExpsAre.Online](https://whatexpsare.online)  •  Updated ${ts.relative(lastUpdated)}`,
+    value:  [
+      summaryParts.join('  •  '),
+      `🕐 Updated ${ts.relative(lastUpdated)}  •  [WhatExpsAre.Online](https://whatexpsare.online)`,
+    ].join('\n'),
     inline: false,
   });
 
-  const title = platformFilter === 'all'
+  const titleStr = platformFilter === 'all'
     ? '⚙️  Executor Status — All Platforms'
     : `⚙️  Executor Status — ${platformFilter}`;
 
+  // Color: red if any detected, green if all updated, yellow otherwise
+  const color: BrandColorKey = detected > 0 ? 'ERROR' : updated === total ? 'SUCCESS' : 'WARNING';
+
   return createBrandedEmbed({
-    color:     detected > 0 ? 'ERROR' : 'SUCCESS',
-    title,
+    color,
+    title:     titleStr,
     fields,
     thumbnail: null,
-    footer:    'Auto-refreshes every 30 seconds • Powered by WhatExpsAre.Online',
+    footer:    'Auto-refreshes every 30s  •  Hides hidden/delisted entries  •  Powered by WhatExpsAre.Online',
   });
 }
 

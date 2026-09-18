@@ -1,3 +1,4 @@
+import { ChatInputCommandInteraction } from 'discord.js';
 import { Executor } from '../../utils/executors.js';
 export declare function formatExecutorForEmbed(exp: Executor): {
     title: string;
@@ -5,26 +6,35 @@ export declare function formatExecutorForEmbed(exp: Executor): {
     platform: string;
     detected: boolean;
     updated: boolean;
+    unknown: boolean;
+    unknownDetection: boolean;
     free: boolean;
     cost: string | undefined;
+    purchaselink: string | undefined;
     websitelink: string | undefined;
     discordlink: string | undefined;
     uncStatus: boolean;
     suncPercentage: number | undefined;
     uncPercentage: number | undefined;
-    decompiler: boolean | undefined;
-    multiInject: boolean | undefined;
+    decompiler: boolean;
+    multiInject: boolean;
+    clientmods: boolean;
+    raknet: boolean;
+    keysystem: boolean;
+    beta: boolean;
     possibleBanwave: boolean;
     hasIssues: boolean;
     detectionReason: string | undefined;
     updatedDate: string;
+    rbxversion: string | undefined;
+    index: number;
     statusEmoji: string;
     statusText: string;
     platformEmoji: string;
 };
 declare const _default: {
     data: import("discord.js").SlashCommandOptionsOnlyBuilder;
-    execute(interaction: any): Promise<void>;
+    execute(interaction: ChatInputCommandInteraction): Promise<void>;
 };
 export default _default;
 //# sourceMappingURL=executors.d.ts.map

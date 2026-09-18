@@ -1,48 +1,68 @@
 import { Logger } from './logger.js';
+// ─── API fetcher ──────────────────────────────────────────────
 const API_URL = 'https://whatexpsare.online/api/status/exploits';
 export async function fetchExecutors() {
     try {
         const response = await fetch(API_URL, {
             headers: { 'Accept': 'application/json' },
+            signal: AbortSignal.timeout(10_000),
         });
         if (!response.ok) {
-            Logger.error(`WEAO API error: ${response.status}`);
+            Logger.error(`WEAO API error: HTTP ${response.status}`);
             return [];
         }
         const data = await response.json();
-        return data.map((e) => ({
-            id: e._id,
-            title: e.title,
-            version: e.version,
-            platform: e.platform || 'Unknown',
-            detected: e.detected ?? false,
-            updateStatus: e.updateStatus ?? false,
-            free: e.free ?? false,
-            cost: e.cost,
-            websitelink: e.websitelink,
-            discordlink: e.discordlink,
-            uncStatus: e.uncStatus ?? false,
-            suncPercentage: e.suncPercentage,
-            uncPercentage: e.uncPercentage,
-            decompiler: e.decompiler ?? false,
-            multiInject: e.multiInject ?? false,
-            clientmods: e.clientmods ?? false,
-            raknet: e.raknet ?? false,
-            beta: e.beta ?? false,
-            unknown: e.unknown ?? false,
-            possibleBanwave: e.possibleBanwave ?? false,
-            hasIssues: e.hasIssues ?? false,
-            detectionReason: e.detectionReason,
-            updatedDate: e.updatedDate || 'Unknown',
-        }));
+        return data
+            .map((e) => ({
+            id: String(e._id ?? ''),
+            title: String(e.title ?? 'Unknown'),
+            version: String(e.version ?? '?'),
+            platform: String(e.platform ?? 'Unknown'),
+            detected: Boolean(e.detected),
+            updateStatus: Boolean(e.updateStatus),
+            unknown: Boolean(e.unknown),
+            unknownDetection: Boolean(e.unknownDetection),
+            free: Boolean(e.free),
+            cost: e.cost ? String(e.cost) : undefined,
+            purchaselink: e.purchaselink ? String(e.purchaselink) : undefined,
+            websitelink: e.websitelink ? String(e.websitelink) : undefined,
+            discordlink: e.discordlink ? String(e.discordlink) : undefined,
+            uncStatus: Boolean(e.uncStatus),
+            suncPercentage: typeof e.suncPercentage === 'number' ? e.suncPercentage : undefined,
+            uncPercentage: typeof e.uncPercentage === 'number' ? e.uncPercentage : undefined,
+            decompiler: Boolean(e.decompiler),
+            multiInject: Boolean(e.multiInject),
+            clientmods: Boolean(e.clientmods),
+            raknet: Boolean(e.raknet),
+            beta: Boolean(e.beta),
+            keysystem: Boolean(e.keysystem),
+            possibleBanwave: Boolean(e.possibleBanwave),
+            hasIssues: Boolean(e.hasIssues),
+            detectionReason: e.detectionReason ? String(e.detectionReason) : undefined,
+            updatedDate: String(e.updatedDate ?? 'Unknown'),
+            rbxversion: e.rbxversion ? String(e.rbxversion) : undefined,
+            index: typeof e.index === 'number' ? e.index : 999,
+            hidden: Boolean(e.hidden),
+            unlinked: Boolean(e.unlinked),
+        }))
+            // Filter out hidden / delisted entries — they're not public
+            .filter(e => !e.hidden && !e.unlinked);
     }
     catch (error) {
-        Logger.error('Error fetching executors from WEAO:', error);
+        Logger.error('Error fetching executors from WEAO', error);
         return [];
     }
 }
+// ─── Status helpers ───────────────────────────────────────────
+/**
+ * Status priority:
+ *   unknown / unknownDetection → ❔ Unknown
+ *   detected                   → 🔴 Detected
+ *   updateStatus && !detected  → 🟢 Updated
+ *   !updateStatus && !detected → 🟡 Pending Update
+ */
 export function getStatusEmoji(exp) {
-    if (exp.unknown)
+    if (exp.unknown || exp.unknownDetection)
         return '❔';
     if (exp.detected)
         return '🔴';
@@ -51,7 +71,7 @@ export function getStatusEmoji(exp) {
     return '🟡';
 }
 export function getStatusText(exp) {
-    if (exp.unknown)
+    if (exp.unknown || exp.unknownDetection)
         return 'Unknown';
     if (exp.detected)
         return 'Detected';

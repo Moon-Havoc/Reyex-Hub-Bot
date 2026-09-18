@@ -200,8 +200,11 @@ export interface ExecutorDisplay {
     platform: string;
     detected: boolean;
     updated: boolean;
+    unknown: boolean;
+    unknownDetection: boolean;
     free: boolean;
     cost?: string;
+    purchaselink?: string;
     websitelink?: string;
     discordlink?: string;
     uncStatus: boolean;
@@ -209,10 +212,16 @@ export interface ExecutorDisplay {
     uncPercentage?: number;
     decompiler?: boolean;
     multiInject?: boolean;
+    clientmods?: boolean;
+    raknet?: boolean;
+    keysystem?: boolean;
+    beta?: boolean;
     possibleBanwave?: boolean;
     hasIssues?: boolean;
     detectionReason?: string;
     updatedDate: string;
+    rbxversion?: string;
+    index: number;
     statusEmoji: string;
     statusText: string;
     platformEmoji: string;
