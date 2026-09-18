@@ -1,87 +1,82 @@
-import { SlashCommandBuilder, PermissionFlagsBits } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction, PermissionFlagsBits } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
 import User from '../../models/User.js';
-import { createErrorEmbed, createSuccessEmbed, createBroadcastEmbed } from '../../utils/embeds.js';
+import { createBroadcastEmbed, createSuccessEmbed, createErrorEmbed, createInfoEmbed } from '../../utils/embeds.js';
+
+const DM_DELAY_MS = 800; // avoid Discord rate limits
 
 export default {
   data: new SlashCommandBuilder()
     .setName('broadcast')
-    .setDescription('Send an announcement to all verified users')
-    .addStringOption(option =>
-      option
-        .setName('message')
-        .setDescription('The announcement message')
-        .setRequired(true)
+    .setDescription('DM all verified members with an announcement')
+    .addStringOption(opt =>
+      opt.setName('message').setDescription('The message to broadcast').setRequired(true).setMaxLength(1500)
     )
-    .addStringOption(option =>
-      option
-        .setName('title')
-        .setDescription('Announcement title')
-        .setRequired(false)
+    .addStringOption(opt =>
+      opt.setName('title').setDescription('Embed title (default: Announcement)').setRequired(false).setMaxLength(100)
     )
     .setDefaultMemberPermissions(PermissionFlagsBits.Administrator),
 
-  async execute(interaction: any) {
+  async execute(interaction: ChatInputCommandInteraction) {
     await interaction.deferReply({ ephemeral: true });
 
+    const message = interaction.options.getString('message', true);
+    const title   = interaction.options.getString('title') ?? 'Announcement';
+
     try {
-      const message = interaction.options.getString('message');
-      const title = interaction.options.getString('title') || '📢 Announcement';
+      const verifiedUsers = await User.find({ isVerified: true }).select('discordId').lean();
 
-      if (!message) {
-        await interaction.editReply({ embeds: [createErrorEmbed({ title: 'Invalid Message', description: 'Please provide a valid message.' })] });
-        return;
-      }
-
-      // Get all verified users
-      const verifiedUsers = await User.find({ isVerified: true });
-      
       if (verifiedUsers.length === 0) {
-        await interaction.editReply({ embeds: [createErrorEmbed({ title: 'No Verified Users', description: 'There are no verified users to send the broadcast to.' })] });
+        await interaction.editReply({
+          embeds: [createErrorEmbed({ title: 'No Recipients', description: 'There are no verified members to broadcast to.' })],
+        });
         return;
       }
 
-      // Create announcement embed
-      const announcementEmbed = createBroadcastEmbed({
-        title,
-        message,
-        author: interaction.user.tag,
+      // Initial progress response
+      await interaction.editReply({
+        embeds: [createInfoEmbed({
+          title:       'Broadcast in Progress',
+          description: `Sending to **${verifiedUsers.length}** verified member${verifiedUsers.length !== 1 ? 's' : ''}…\nThis may take a moment.`,
+        })],
       });
 
-      // Send DMs to all verified users
-      let successCount = 0;
-      let failureCount = 0;
+      const embed = createBroadcastEmbed({ title, message, author: interaction.user.tag });
 
-      for (const user of verifiedUsers) {
+      let sent   = 0;
+      let failed = 0;
+
+      for (const { discordId } of verifiedUsers) {
         try {
-          const discordUser = await interaction.client.users.fetch(user.discordId);
-          await discordUser.send({ embeds: [announcementEmbed] });
-          successCount++;
-          
-          // Rate limiting to avoid Discord API limits
-          await new Promise<void>(resolve => setTimeout(resolve, 1000));
-        } catch (error) {
-          failureCount++;
-          Logger.warn(`Failed to send broadcast to user ${user.discordId}: ${error}`);
+          const user = await interaction.client.users.fetch(discordId);
+          await user.send({ embeds: [embed] });
+          sent++;
+        } catch {
+          failed++;
         }
+        await sleep(DM_DELAY_MS);
       }
 
-      const resultEmbed = createSuccessEmbed({
-        title: 'Broadcast Sent',
-        description: 'Announcement sent to verified users.',
-        fields: [
-          { name: 'Total Verified Users', value: verifiedUsers.length.toString(), inline: true },
-          { name: 'Successfully Sent', value: successCount.toString(), inline: true },
-          { name: 'Failed', value: failureCount.toString(), inline: true },
-        ],
+      await interaction.editReply({
+        embeds: [createSuccessEmbed({
+          title:       'Broadcast Complete',
+          description: `Message delivered to **${sent}** member${sent !== 1 ? 's' : ''}${failed > 0 ? `, failed for **${failed}** (DMs disabled)` : ''}.`,
+          fields: [
+            { name: '✅  Delivered', value: String(sent),                        inline: true },
+            { name: '❌  Failed',    value: `${failed} (DMs disabled or blocked)`, inline: true },
+            { name: '📋  Message',   value: title,                               inline: true },
+          ],
+        })],
       });
 
-      await interaction.editReply({ embeds: [resultEmbed] });
-      Logger.info(`Broadcast sent by ${interaction.user.tag}: ${successCount} successful, ${failureCount} failed`);
-
+      Logger.info(`Broadcast "${title}" by ${interaction.user.tag}: ${sent} sent, ${failed} failed`);
     } catch (error) {
-      Logger.error('Error in broadcast command:', error);
-      await interaction.editReply({ content: 'An error occurred while sending the broadcast. Please try again.' });
+      Logger.error('Error in /broadcast', error);
+      await interaction.editReply({ content: '❌  An error occurred during the broadcast.' });
     }
   },
 };
+
+function sleep(ms: number): Promise<void> {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}

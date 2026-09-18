@@ -1,14 +1,19 @@
 export declare enum LogLevel {
+    DEBUG = "DEBUG",
     INFO = "INFO",
-    ERROR = "ERROR",
     WARN = "WARN",
-    DEBUG = "DEBUG"
+    ERROR = "ERROR"
 }
 export declare class Logger {
-    private static formatMessage;
-    static info(message: string): void;
+    private static formatTimestamp;
+    private static buildLine;
+    static debug(message: string, ...meta: unknown[]): void;
+    static info(message: string, ...meta: unknown[]): void;
+    static warn(message: string, ...meta: unknown[]): void;
     static error(message: string, error?: unknown): void;
-    static warn(message: string): void;
-    static debug(message: string): void;
+    /** Log a startup banner with key/value pairs */
+    static banner(title: string, fields: Record<string, string | number | boolean>): void;
+    /** Convenience: log the start of an action and return a done() function */
+    static action(message: string): () => void;
 }
 //# sourceMappingURL=logger.d.ts.map

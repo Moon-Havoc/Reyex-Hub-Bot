@@ -39,6 +39,9 @@ const GiveawaySchema = new mongoose.Schema({
     },
     messageId: {
         type: String
+    },
+    channelId: {
+        type: String
     }
 });
 // Index for faster queries

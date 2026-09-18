@@ -1,14 +1,17 @@
-import { EmbedBuilder, Client, ActionRowBuilder, ButtonBuilder } from 'discord.js';
+import { EmbedBuilder, Client, ActionRowBuilder, ButtonBuilder, StringSelectMenuBuilder } from 'discord.js';
 export declare const BrandColors: {
-    PRIMARY: string;
-    SUCCESS: string;
-    ERROR: string;
-    WARNING: string;
-    INFO: string;
-    DARK: string;
-    ACCENT: string;
-    MUTED: string;
+    PRIMARY: '#DC143C';
+    SUCCESS: '#2ECC71';
+    ERROR: '#E74C3C';
+    WARNING: '#F39C12';
+    INFO: '#3498DB';
+    DARK: '#1a1a1a';
+    ACCENT: '#8B0000';
+    MUTED: '#95A5A6';
+    PURPLE: '#9B59B6';
+    GOLD: '#F1C40F';
 };
+export type BrandColorKey = keyof typeof BrandColors;
 export declare const BrandConfig: {
     FOOTER_TEXT: string;
     FOOTER_ICON: string;
@@ -16,28 +19,44 @@ export declare const BrandConfig: {
     AUTHOR_NAME: string;
     AUTHOR_ICON: string;
 };
-/**
- * Fetch the bot's avatar and set it as the brand icon/thumbnail.
- */
 export declare function initBrandAssets(client: Client): Promise<void>;
-/**
- * Core branded embed builder
- */
-export declare function createBrandedEmbed(options: {
-    color?: keyof typeof BrandColors | string;
+/** Render a filled progress bar: `████░░░░ 42%` */
+export declare function progressBar(percent: number, length?: number): string;
+/** Inline bold progress bar field value */
+export declare function progressField(percent: number, length?: number): string;
+/** Pluralise: `1 vote` / `5 votes` */
+export declare function plural(n: number, word: string, suffix?: string): string;
+/** Unix timestamp tag shorthand */
+export declare const ts: {
+    relative: (d: Date) => string;
+    short: (d: Date) => string;
+    long: (d: Date) => string;
+    date: (d: Date) => string;
+};
+export interface EmbedOptions {
+    color?: BrandColorKey | string;
     title?: string;
     description?: string;
+    url?: string;
     fields?: {
         name: string;
         value: string;
         inline?: boolean;
     }[];
-    thumbnail?: string;
+    thumbnail?: string | null;
     image?: string;
-    author?: string;
-    footer?: string;
+    author?: string | {
+        name: string;
+        iconURL?: string;
+        url?: string;
+    };
+    footer?: string | {
+        text: string;
+        iconURL?: string;
+    };
     timestamp?: boolean;
-}): EmbedBuilder;
+}
+export declare function createBrandedEmbed(options: EmbedOptions): EmbedBuilder;
 export declare function createSuccessEmbed(options: {
     title: string;
     description?: string;
@@ -104,12 +123,16 @@ export declare function createGamesListEmbed(options: {
         mobileCompatible: boolean;
     }>;
     category?: string;
+    page?: number;
+    perPage?: number;
 }): EmbedBuilder;
 export declare function createProfileEmbed(options: {
     username: string;
     discriminator: string;
+    discordId: string;
     isVerified: boolean;
     robloxUsername?: string;
+    robloxId?: string;
     scriptsUsed: number;
     joinedAt: Date;
     lastSeen: Date;
@@ -125,6 +148,7 @@ export declare function createStatsEmbed(options: {
     scriptsUsed: number;
     verificationRate: number;
     activeRate: number;
+    uptime?: number;
 }): EmbedBuilder;
 export declare function createGiveawayEmbed(options: {
     name: string;
@@ -134,6 +158,7 @@ export declare function createGiveawayEmbed(options: {
     participants: number;
     isActive: boolean;
     winner?: string;
+    hostedBy?: string;
 }): EmbedBuilder;
 export declare function createBroadcastEmbed(options: {
     title: string;
@@ -142,15 +167,34 @@ export declare function createBroadcastEmbed(options: {
 }): EmbedBuilder;
 export declare function createPollEmbed(options: {
     question: string;
-    options: {
+    options: Array<{
         text: string;
         voters: string[];
-    }[];
+    }>;
     createdBy: string;
     endTime?: Date;
     isActive: boolean;
 }): EmbedBuilder;
-export interface FormattedExecutor {
+export declare function createWelcomeEmbed(options: {
+    username: string;
+    userId: string;
+    guildName: string;
+    memberCount: number;
+    avatar?: string;
+}): EmbedBuilder;
+export declare function createModLogEmbed(options: {
+    action: string;
+    target: string;
+    targetId: string;
+    moderator: string;
+    reason: string;
+    extra?: {
+        name: string;
+        value: string;
+        inline?: boolean;
+    }[];
+}): EmbedBuilder;
+export interface ExecutorDisplay {
     title: string;
     version: string;
     platform: string;
@@ -168,15 +212,27 @@ export interface FormattedExecutor {
     possibleBanwave?: boolean;
     hasIssues?: boolean;
     detectionReason?: string;
-    updatedDate?: string;
+    updatedDate: string;
     statusEmoji: string;
     statusText: string;
     platformEmoji: string;
 }
 export declare function createExecutorsEmbed(options: {
-    executors: FormattedExecutor[];
-    platformFilter?: string;
+    executors: ExecutorDisplay[];
+    platformFilter: string;
     lastUpdated: Date;
 }): EmbedBuilder;
-export declare function createExecutorButtons(currentPlatform?: string): ActionRowBuilder<ButtonBuilder>[];
+export declare function createExecutorButtons(activePlatform: string): ActionRowBuilder<ButtonBuilder>[];
+export type HelpCategory = 'user' | 'moderation' | 'admin' | 'info';
+export declare const HELP_CATEGORIES: Record<HelpCategory, {
+    label: string;
+    emoji: string;
+    description: string;
+    commands: {
+        name: string;
+        desc: string;
+    }[];
+}>;
+export declare function createHelpEmbed(category: HelpCategory): EmbedBuilder;
+export declare function createHelpSelectMenu(): StringSelectMenuBuilder;
 //# sourceMappingURL=embeds.d.ts.map

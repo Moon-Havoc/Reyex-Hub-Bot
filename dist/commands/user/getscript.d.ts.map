@@ -1,1 +1,1 @@
-{"version":3,"file":"getscript.d.ts","sourceRoot":"","sources":["../../../src/commands/user/getscript.ts"],"names":[],"mappings":";IAOE,IAAI;IAWE,YAAY,cAAc,GAAG;IAY7B,OAAO,cAAc,GAAG"}
+{"version":3,"file":"getscript.d.ts","sourceRoot":"","sources":["../../../src/commands/user/getscript.ts"],"names":[],"mappings":"AAAA,OAAO,EAEL,2BAA2B,EAC3B,uBAAuB,EAIxB,MAAM,YAAY,CAAC;;IAOlB,IAAI;IAWE,YAAY,cAAc,uBAAuB;IAUjD,OAAO,cAAc,2BAA2B"}

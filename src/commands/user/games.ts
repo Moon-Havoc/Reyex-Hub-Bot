@@ -1,84 +1,111 @@
-import { SlashCommandBuilder } from 'discord.js';
+import {
+  SlashCommandBuilder,
+  ChatInputCommandInteraction,
+  AutocompleteInteraction,
+  ActionRowBuilder,
+  ButtonBuilder,
+  ButtonStyle,
+} from 'discord.js';
 import { Logger } from '../../utils/logger.js';
 import Game from '../../models/Game.js';
 import { createErrorEmbed, createGamesListEmbed } from '../../utils/embeds.js';
 
+const PER_PAGE = 9; // 3 × 3 inline grid
+
 export default {
   data: new SlashCommandBuilder()
     .setName('games')
-    .setDescription('List all available games and scripts')
-    .addStringOption(option =>
-      option
+    .setDescription('Browse all available game scripts')
+    .addStringOption(opt =>
+      opt
         .setName('category')
         .setDescription('Filter by category')
         .setRequired(false)
         .setAutocomplete(true)
+    )
+    .addIntegerOption(opt =>
+      opt
+        .setName('page')
+        .setDescription('Page number (default: 1)')
+        .setRequired(false)
+        .setMinValue(1)
     ),
 
-  async autocomplete(interaction: any) {
-    const focusedValue = interaction.options.getFocused();
-    const categories = await Game.distinct('category', { isActive: true });
-    
-    const filtered = categories
-      .filter(cat => cat.toLowerCase().includes(focusedValue.toLowerCase()))
+  async autocomplete(interaction: AutocompleteInteraction) {
+    const focused     = interaction.options.getFocused().toLowerCase();
+    const categories  = await Game.distinct('category', { isActive: true }) as string[];
+    const filtered    = categories
+      .filter(c => c.toLowerCase().includes(focused))
       .slice(0, 25)
-      .map(cat => ({ name: cat, value: cat }));
-
+      .map(c => ({ name: c, value: c }));
     await interaction.respond(filtered);
   },
 
-  async execute(interaction: any) {
+  async execute(interaction: ChatInputCommandInteraction) {
     await interaction.deferReply();
 
+    const category = interaction.options.getString('category') ?? undefined;
+    const page     = interaction.options.getInteger('page') ?? 1;
+
     try {
-      const category = interaction.options.getString('category');
-      
-      // Build query
-      const query: any = { isActive: true };
-      if (category) {
-        query.category = category;
-      }
+      const query: Record<string, unknown> = { isActive: true };
+      if (category) query.category = category;
 
-      // Get games
-      const games = await Game.find(query).sort({ name: 1 });
-      
+      const games = await Game.find(query).sort({ name: 1 }).lean();
+
       if (games.length === 0) {
-        const noGamesEmbed = createErrorEmbed({
-          title: 'No Games Found',
-          description: category 
-            ? `No games found in category "${category}".` 
-            : 'No games are currently available.',
-          fields: [
-            { name: '💡 Tip', value: 'Admins can add games with `/addgame`.' },
-          ],
+        await interaction.editReply({
+          embeds: [createErrorEmbed({
+            title:       'No Games Found',
+            description: category
+              ? `No scripts available in **"${category}"**.`
+              : 'No scripts are currently available.',
+            fields: [{ name: '💡', value: 'Admins can add scripts with `/addgame`.' }],
+          })],
         });
-
-        await interaction.editReply({ embeds: [noGamesEmbed] });
         return;
       }
 
-      // Create branded games list embed
-      const gamesData = games.map(game => ({
-        name: game.name,
-        description: game.description,
-        category: game.category,
-        usageCount: game.usageCount,
-        free: game.free,
-        keyRequired: game.keyRequired,
-        mobileCompatible: game.mobileCompatible,
-      }));
+      const totalPages = Math.ceil(games.length / PER_PAGE);
+      const safePage   = Math.min(page, totalPages);
 
-      const gamesEmbed = createGamesListEmbed({
-        games: gamesData,
-        category: category || undefined,
+      const embed = createGamesListEmbed({
+        games: games.map(g => ({
+          name:             g.name,
+          description:      g.description,
+          category:         g.category,
+          usageCount:       g.usageCount,
+          free:             g.free,
+          keyRequired:      g.keyRequired,
+          mobileCompatible: g.mobileCompatible,
+        })),
+        category,
+        page:    safePage,
+        perPage: PER_PAGE,
       });
 
-      await interaction.editReply({ embeds: [gamesEmbed] });
-      Logger.info(`User ${interaction.user.tag} viewed games list${category ? ` for category: ${category}` : ''}`);
+      const components: ActionRowBuilder<ButtonBuilder>[] = [];
+      if (totalPages > 1) {
+        const row = new ActionRowBuilder<ButtonBuilder>().addComponents(
+          new ButtonBuilder()
+            .setCustomId(`games_prev_${safePage}_${category ?? 'all'}`)
+            .setLabel('◀  Previous')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(safePage <= 1),
+          new ButtonBuilder()
+            .setCustomId(`games_next_${safePage}_${category ?? 'all'}`)
+            .setLabel('Next  ▶')
+            .setStyle(ButtonStyle.Secondary)
+            .setDisabled(safePage >= totalPages),
+        );
+        components.push(row);
+      }
 
+      await interaction.editReply({ embeds: [embed], components });
+      Logger.info(`Games list viewed by ${interaction.user.tag} — page ${safePage}/${totalPages}${category ? ` (${category})` : ''}`);
     } catch (error) {
-      Logger.error('Error in games command:', error);
-      await interaction.editReply({ content: 'An error occurred while fetching games. Please try again.' });
+      Logger.error('Error in /games', error);
+      await interaction.editReply({ content: '❌  An error occurred. Please try again.' });
     }
   },
 };

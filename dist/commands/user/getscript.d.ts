@@ -1,7 +1,8 @@
+import { ChatInputCommandInteraction, AutocompleteInteraction } from 'discord.js';
 declare const _default: {
     data: import("discord.js").SlashCommandOptionsOnlyBuilder;
-    autocomplete(interaction: any): Promise<void>;
-    execute(interaction: any): Promise<void>;
+    autocomplete(interaction: AutocompleteInteraction): Promise<void>;
+    execute(interaction: ChatInputCommandInteraction): Promise<void>;
 };
 export default _default;
 //# sourceMappingURL=getscript.d.ts.map

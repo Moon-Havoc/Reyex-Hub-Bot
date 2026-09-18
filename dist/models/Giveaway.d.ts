@@ -11,6 +11,7 @@ export interface IGiveaway extends mongoose.Document {
     winner?: string;
     endedAt?: Date;
     messageId?: string;
+    channelId?: string;
 }
 declare const _default: mongoose.Model<IGiveaway, {}, {}, {}, mongoose.Document<unknown, {}, IGiveaway, {}, mongoose.DefaultSchemaOptions> & IGiveaway & Required<{
     _id: mongoose.Types.ObjectId;

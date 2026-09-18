@@ -1,23 +1,30 @@
 {
   "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "lib": ["ES2022"],
-    "moduleResolution": "bundler",
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
+    "target":                          "ES2022",
+    "module":                          "ES2022",
+    "lib":                             ["ES2022"],
+    "moduleResolution":                "bundler",
+    "outDir":                          "./dist",
+    "rootDir":                         "./src",
+
+    // Type checking
+    "strict":                          true,
+    "noUnusedLocals":                  true,
+    "noUnusedParameters":              true,
+    "noImplicitReturns":               true,
+    "noFallthroughCasesInSwitch":      true,
+    "exactOptionalPropertyTypes":      false,
+
+    // Interop
+    "esModuleInterop":                 true,
+    "skipLibCheck":                    true,
     "forceConsistentCasingInFileNames": true,
-    "resolveJsonModule": true,
-    "declaration": true,
-    "declarationMap": true,
-    "sourceMap": true,
-    "noUnusedLocals": true,
-    "noUnusedParameters": true,
-    "noImplicitReturns": true,
-    "noFallthroughCasesInSwitch": true
+    "resolveJsonModule":               true,
+
+    // Output
+    "declaration":                     true,
+    "declarationMap":                  true,
+    "sourceMap":                       true
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

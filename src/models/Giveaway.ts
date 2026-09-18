@@ -12,6 +12,7 @@ export interface IGiveaway extends mongoose.Document {
   winner?: string;
   endedAt?: Date;
   messageId?: string;
+  channelId?: string;
 }
 
 const GiveawaySchema = new mongoose.Schema<IGiveaway>({
@@ -53,6 +54,9 @@ const GiveawaySchema = new mongoose.Schema<IGiveaway>({
     type: Date 
   },
   messageId: {
+    type: String
+  },
+  channelId: {
     type: String
   }
 });

@@ -1,4 +1,4 @@
-import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle } from 'discord.js';
+import { SlashCommandBuilder, ActionRowBuilder, ButtonBuilder, ButtonStyle, } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
 import User from '../../models/User.js';
 import Game from '../../models/Game.js';
@@ -6,84 +6,84 @@ import { createErrorEmbed, createGameEmbed } from '../../utils/embeds.js';
 export default {
     data: new SlashCommandBuilder()
         .setName('getscript')
-        .setDescription('Get a script for a specific game')
-        .addStringOption(option => option
+        .setDescription('Retrieve a script for a specific game (verified members only)')
+        .addStringOption(opt => opt
         .setName('game')
         .setDescription('The game name')
         .setRequired(true)
         .setAutocomplete(true)),
     async autocomplete(interaction) {
-        const focusedValue = interaction.options.getFocused();
-        const games = await Game.find({ isActive: true }).select('name');
+        const focused = interaction.options.getFocused().toLowerCase();
+        const games = await Game.find({ isActive: true }).select('name category').lean();
         const filtered = games
-            .filter(game => game.name.toLowerCase().includes(focusedValue.toLowerCase()))
+            .filter(g => g.name.toLowerCase().includes(focused))
             .slice(0, 25)
-            .map(game => ({ name: game.name, value: game.name }));
+            .map(g => ({ name: `${g.name} — ${g.category}`, value: g.name }));
         await interaction.respond(filtered);
     },
     async execute(interaction) {
-        await interaction.deferReply();
+        // Ephemeral — scripts are only for verified members, keep them private
+        await interaction.deferReply({ ephemeral: true });
+        const gameName = interaction.options.getString('game', true);
+        const userId = interaction.user.id;
         try {
-            const gameName = interaction.options.getString('game');
-            const userId = interaction.user.id;
-            // Check if user is verified
+            // Verification gate
             const user = await User.findOne({ discordId: userId });
-            if (!user || !user.isVerified) {
-                const notVerifiedEmbed = createErrorEmbed({
-                    title: 'Not Verified',
-                    description: 'You need to verify your Roblox account first!',
-                    fields: [
-                        { name: 'How to Verify', value: 'Use `/verify` with your Roblox username to get access.' }
-                    ],
+            if (!user?.isVerified) {
+                await interaction.editReply({
+                    embeds: [createErrorEmbed({
+                            title: 'Verification Required',
+                            description: 'You must verify your Roblox account before accessing scripts.',
+                            fields: [{ name: '💡  How to verify', value: 'Run `/verify start` with your Roblox username.' }],
+                        })],
                 });
-                await interaction.editReply({ embeds: [notVerifiedEmbed] });
                 return;
             }
             // Find the game
             const game = await Game.findOne({ name: gameName, isActive: true });
             if (!game) {
-                const notFoundEmbed = createErrorEmbed({
-                    title: 'Game Not Found',
-                    description: `Game "${gameName}" not found or not available.`,
-                    fields: [
-                        { name: 'Available Games', value: 'Use `/games` to see all available games.' }
-                    ],
+                await interaction.editReply({
+                    embeds: [createErrorEmbed({
+                            title: 'Game Not Found',
+                            description: `**"${gameName}"** doesn't exist or is currently unavailable.`,
+                            fields: [{ name: '📋  Browse scripts', value: 'Use `/games` to see everything available.' }],
+                        })],
                 });
-                await interaction.editReply({ embeds: [notFoundEmbed] });
                 return;
             }
-            // Update user statistics
-            user.statistics.scriptsUsed++;
-            user.statistics.lastScriptUsed = new Date();
-            user.lastSeen = new Date();
-            await user.save();
-            // Update game usage count
-            game.usageCount++;
-            await game.save();
-            // Send script URL with branded embed
+            // Update stats
+            await Promise.all([
+                User.updateOne({ discordId: userId }, {
+                    $inc: { 'statistics.scriptsUsed': 1 },
+                    $set: { 'statistics.lastScriptUsed': new Date(), lastSeen: new Date() },
+                }),
+                Game.updateOne({ _id: game._id }, { $inc: { usageCount: 1 } }),
+            ]);
             const scriptEmbed = createGameEmbed({
                 gameName: game.name,
                 description: game.description,
                 scriptUrl: game.scriptUrl,
                 category: game.category,
+                usageCount: game.usageCount + 1,
                 free: game.free,
                 keyRequired: game.keyRequired,
                 mobileCompatible: game.mobileCompatible,
             });
             const components = [];
-            if (game.scriptUrl.startsWith('http://') || game.scriptUrl.startsWith('https://')) {
+            if (game.scriptUrl.startsWith('http')) {
                 const row = new ActionRowBuilder().addComponents(new ButtonBuilder()
-                    .setLabel('Open Raw Script')
+                    .setLabel('View Raw Script')
                     .setStyle(ButtonStyle.Link)
-                    .setURL(game.scriptUrl));
+                    .setURL(game.scriptUrl)
+                    .setEmoji('📄'));
                 components.push(row);
             }
             await interaction.editReply({ embeds: [scriptEmbed], components });
-            Logger.info(`User ${interaction.user.tag} retrieved script for ${gameName}`);
+            Logger.info(`Script retrieved: ${interaction.user.tag} → ${gameName}`);
         }
         catch (error) {
-            Logger.error('Error in getscript command:', error);
-            await interaction.editReply({ content: 'An error occurred while retrieving the script. Please try again.' });
+            Logger.error('Error in /getscript', error);
+            await interaction.editReply({ content: '❌  An error occurred. Please try again.' });
         }
     },
 };

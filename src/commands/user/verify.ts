@@ -1,75 +1,74 @@
-import { SlashCommandBuilder } from 'discord.js';
+import { SlashCommandBuilder, ChatInputCommandInteraction } from 'discord.js';
 import { Logger } from '../../utils/logger.js';
 import User from '../../models/User.js';
 import { RobloxAPI } from '../../utils/roblox.js';
-import { createSuccessEmbed, createErrorEmbed, createWarningEmbed, createBrandedInfoEmbed } from '../../utils/embeds.js';
+import {
+  createSuccessEmbed,
+  createErrorEmbed,
+  createWarningEmbed,
+  createBrandedEmbed,
+  ts,
+} from '../../utils/embeds.js';
 
 export default {
   data: new SlashCommandBuilder()
     .setName('verify')
-    .setDescription('Verify your Roblox account to get access to scripts')
-    .addSubcommand(subcommand =>
-      subcommand
+    .setDescription('Link your Roblox account to access scripts')
+    .addSubcommand(sub =>
+      sub
         .setName('start')
         .setDescription('Begin verification with your Roblox username')
-        .addStringOption(option =>
-          option.setName('roblox_username').setDescription('Your Roblox username').setRequired(true)
+        .addStringOption(opt =>
+          opt.setName('roblox_username').setDescription('Your Roblox username').setRequired(true)
         )
     )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('confirm')
-        .setDescription('Confirm verification after adding the code to your Roblox profile')
+    .addSubcommand(sub =>
+      sub.setName('confirm').setDescription('Confirm after adding the code to your Roblox profile')
     )
-    .addSubcommand(subcommand =>
-      subcommand
-        .setName('status')
-        .setDescription('Check your verification status')
+    .addSubcommand(sub =>
+      sub.setName('status').setDescription('Check your verification status')
     ),
 
-  async execute(interaction: any) {
-    const subcommand = interaction.options.getSubcommand();
-
-    if (subcommand === 'start') {
-      await startVerification(interaction);
-    } else if (subcommand === 'confirm') {
-      await confirmVerification(interaction);
-    } else if (subcommand === 'status') {
-      await checkStatus(interaction);
-    }
+  async execute(interaction: ChatInputCommandInteraction) {
+    const sub = interaction.options.getSubcommand();
+    if (sub === 'start')   return startVerification(interaction);
+    if (sub === 'confirm') return confirmVerification(interaction);
+    if (sub === 'status')  return checkStatus(interaction);
   },
 };
 
-async function startVerification(interaction: any) {
+// ─── /verify start ────────────────────────────────────────────
+
+async function startVerification(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
-  try {
-    const robloxUsername = interaction.options.getString('roblox_username');
-    const userId = interaction.user.id;
+  const robloxUsername = interaction.options.getString('roblox_username', true);
+  const userId         = interaction.user.id;
 
-    // Check if already verified
-    const existingUser = await User.findOne({ discordId: userId });
-    if (existingUser && existingUser.isVerified) {
+  try {
+    // Already verified?
+    const existing = await User.findOne({ discordId: userId });
+    if (existing?.isVerified) {
       await interaction.editReply({
         embeds: [createWarningEmbed({
-          title: 'Already Verified',
-          description: 'You are already verified with Roblox!',
+          title:       'Already Verified',
+          description: 'Your Roblox account is already linked.',
           fields: [
-            { name: 'Roblox Username', value: existingUser.robloxUsername || 'Unknown' },
-            { name: 'Verified At', value: existingUser.verifiedAt?.toLocaleDateString() || 'Unknown' },
+            { name: '🎮  Roblox',    value: `\`${existing.robloxUsername}\``,                              inline: true },
+            { name: '🔗  Verified',  value: ts.relative(existing.verifiedAt ?? new Date()),                inline: true },
           ],
         })],
       });
       return;
     }
 
-    // Look up the Roblox user
+    // Look up the Roblox account
     const robloxUser = await RobloxAPI.getUserByUsername(robloxUsername);
     if (!robloxUser) {
       await interaction.editReply({
         embeds: [createErrorEmbed({
-          title: 'User Not Found',
-          description: `Could not find a Roblox user with the username "${robloxUsername}". Please double-check the spelling.`,
+          title:       'User Not Found',
+          description: `No Roblox user found for **"${robloxUsername}"**. Check the spelling and try again.`,
         })],
       });
       return;
@@ -78,195 +77,221 @@ async function startVerification(interaction: any) {
     if (robloxUser.isBanned) {
       await interaction.editReply({
         embeds: [createErrorEmbed({
-          title: 'Account Banned',
-          description: 'This Roblox account is banned and cannot be verified.',
+          title:       'Account Banned',
+          description: 'That Roblox account is banned and cannot be used for verification.',
         })],
       });
       return;
     }
 
-    // Generate verification code
-    const verificationCode = RobloxAPI.generateVerificationCode(userId);
-    const expiry = new Date(Date.now() + 10 * 60 * 1000); // 10 minutes
+    // Generate a fresh random code
+    const code   = RobloxAPI.generateVerificationCode(userId);
+    const expiry = new Date(Date.now() + 10 * 60 * 1_000); // 10 min
 
-    // Save pending verification to DB
-    if (existingUser) {
-      existingUser.pendingVerificationCode = verificationCode;
-      existingUser.pendingRobloxUsername = robloxUser.name;
-      existingUser.pendingVerificationExpiry = expiry;
-      await existingUser.save();
-    } else {
-      const member = await interaction.guild.members.fetch(userId);
-      const newUser = new User({
-        discordId: userId,
-        username: interaction.user.username,
-        discriminator: interaction.user.discriminator,
-        avatar: interaction.user.avatar,
-        pendingVerificationCode: verificationCode,
-        pendingRobloxUsername: robloxUser.name,
-        pendingVerificationExpiry: expiry,
-        lastSeen: new Date(),
-        joinedAt: member.joinedAt,
-        statistics: { scriptsUsed: 0 },
-      });
-      await newUser.save();
-    }
+    // Persist pending state
+    await User.findOneAndUpdate(
+      { discordId: userId },
+      {
+        $set: {
+          username:                  interaction.user.username,
+          discriminator:             interaction.user.discriminator,
+          avatar:                    interaction.user.avatar ?? undefined,
+          pendingVerificationCode:   code,
+          pendingRobloxUsername:     robloxUser.name,
+          pendingVerificationExpiry: expiry,
+          lastSeen:                  new Date(),
+        },
+        $setOnInsert: {
+          joinedAt:   new Date(),
+          statistics: { scriptsUsed: 0 },
+        },
+      },
+      { upsert: true, new: true }
+    );
 
     await interaction.editReply({
-      embeds: [createBrandedInfoEmbed({
-        title: 'Roblox Verification',
-        description: 'Follow these steps to verify your account:',
+      embeds: [createBrandedEmbed({
+        color:       'INFO',
+        title:       '🔐  Roblox Verification — Step by Step',
+        description: 'Follow the steps below. Your code expires in **10 minutes**.',
+        thumbnail:   null,
         fields: [
           {
-            name: 'Step 1',
-            value: `Go to your Roblox profile and edit your **About** section.\nProfile: https://www.roblox.com/users/${robloxUser.id}/profile`,
+            name:  '**Step 1**  —  Open your Roblox profile',
+            value: `Go to [your profile](https://www.roblox.com/users/${robloxUser.id}/profile) and click **Edit Profile**.`,
           },
           {
-            name: 'Step 2',
-            value: `Paste this verification code into your About section:\n\`\`\`${verificationCode}\`\`\``,
+            name:  '**Step 2**  —  Paste your code',
+            value: `Add this **exact** text to your **About** section:\n\`\`\`\n${code}\n\`\`\``,
           },
           {
-            name: 'Step 3',
-            value: 'Run `/verify confirm` once you\'ve saved the changes.',
+            name:  '**Step 3**  —  Save & confirm',
+            value: 'Save your Roblox profile, then run **`/verify confirm`** here.',
           },
           {
-            name: '⏱️ Expiry',
-            value: `This code expires in **10 minutes**. If it expires, run \`/verify start\` again.`,
+            name:   '⏰  Expires',
+            value:  ts.relative(expiry),
+            inline: true,
+          },
+          {
+            name:   '🎮  Account',
+            value:  `[${robloxUser.name}](https://www.roblox.com/users/${robloxUser.id}/profile)`,
+            inline: true,
           },
         ],
+        footer: 'You can run /verify status at any time to check your progress.',
       })],
     });
 
-    Logger.info(`Verification started for ${interaction.user.tag} → Roblox: ${robloxUser.name}`);
-
+    Logger.info(`Verification started: ${interaction.user.tag} → Roblox: ${robloxUser.name}`);
   } catch (error) {
-    Logger.error('Error in verify start:', error);
-    await interaction.editReply({ content: 'An error occurred. Please try again.' });
+    Logger.error('Error in /verify start', error);
+    await interaction.editReply({ content: '❌  An error occurred. Please try again.' });
   }
 }
 
-async function confirmVerification(interaction: any) {
+// ─── /verify confirm ──────────────────────────────────────────
+
+async function confirmVerification(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
+  const userId = interaction.user.id;
+
   try {
-    const userId = interaction.user.id;
     const user = await User.findOne({ discordId: userId });
 
-    if (!user || !user.pendingVerificationCode) {
+    if (!user?.pendingVerificationCode) {
       await interaction.editReply({
         embeds: [createErrorEmbed({
-          title: 'No Pending Verification',
-          description: 'You haven\'t started verification yet. Run `/verify start` with your Roblox username first.',
+          title:       'No Pending Verification',
+          description: "You haven't started verification yet. Run `/verify start` with your Roblox username first.",
         })],
       });
       return;
     }
 
+    // Check expiry (DB gate — in-memory gate in RobloxAPI.validateCode is a second layer)
     if (user.pendingVerificationExpiry && user.pendingVerificationExpiry < new Date()) {
-      user.pendingVerificationCode = undefined;
-      user.pendingRobloxUsername = undefined;
+      user.pendingVerificationCode   = undefined;
+      user.pendingRobloxUsername     = undefined;
       user.pendingVerificationExpiry = undefined;
       await user.save();
 
       await interaction.editReply({
         embeds: [createErrorEmbed({
-          title: 'Code Expired',
-          description: 'Your verification code has expired. Run `/verify start` again to get a new one.',
+          title:       'Code Expired',
+          description: 'Your verification code expired. Run `/verify start` again to get a new one.',
         })],
       });
       return;
     }
 
-    // Fetch Roblox profile description
+    // In-memory code check (detects restart-invalidated codes)
+    if (!RobloxAPI.validateCode(userId, user.pendingVerificationCode)) {
+      await interaction.editReply({
+        embeds: [createErrorEmbed({
+          title:       'Code Invalid',
+          description: 'The verification code is no longer valid (the bot may have restarted). Run `/verify start` again.',
+        })],
+      });
+      return;
+    }
+
+    // Fetch Roblox profile
     const robloxUser = await RobloxAPI.getUserByUsername(user.pendingRobloxUsername!);
     if (!robloxUser) {
       await interaction.editReply({
         embeds: [createErrorEmbed({
-          title: 'Roblox Error',
-          description: 'Could not fetch your Roblox profile. Please try again.',
+          title:       'Roblox Error',
+          description: 'Could not fetch your Roblox profile. Please try again in a moment.',
         })],
       });
       return;
     }
 
     const description = await RobloxAPI.getProfileDescription(robloxUser.id);
-    if (!description) {
+    if (description === null) {
       await interaction.editReply({
         embeds: [createErrorEmbed({
-          title: 'Profile Inaccessible',
-          description: 'Could not read your Roblox profile description. Make sure your profile is public.',
+          title:       'Profile Inaccessible',
+          description: 'Could not read your Roblox **About** section. Make sure your profile is set to **Public**.',
         })],
       });
       return;
     }
 
-    // Check if the verification code is in the profile description
     if (!description.includes(user.pendingVerificationCode)) {
       await interaction.editReply({
         embeds: [createErrorEmbed({
-          title: 'Code Not Found',
-          description: 'The verification code was not found in your Roblox profile description.',
+          title:       'Code Not Found',
+          description: 'The verification code was **not found** in your Roblox About section.',
           fields: [
-            { name: 'What to do', value: 'Make sure you pasted the **exact** code and saved your profile.' },
+            { name: 'Expected code', value: `\`${user.pendingVerificationCode}\`` },
+            { name: 'What to check', value: '• Make sure you pasted the code exactly\n• Make sure your profile was saved\n• Make sure your profile privacy is set to Public' },
           ],
         })],
       });
       return;
     }
 
-    // Verification successful!
-    const guild = interaction.guild;
+    // ── Verification passed ──────────────────────────────────
     const verifiedRoleId = process.env.VERIFIED_ROLE_ID;
-
     if (!verifiedRoleId) {
-      Logger.error('VERIFIED_ROLE_ID not set');
-      await interaction.editReply({ content: 'Server configuration error. Please contact staff.' });
+      Logger.error('VERIFIED_ROLE_ID is not set');
+      await interaction.editReply({ content: '❌  Server configuration error — contact staff.' });
       return;
     }
 
+    const guild       = interaction.guild!;
     const verifiedRole = guild.roles.cache.get(verifiedRoleId);
     if (!verifiedRole) {
       Logger.error(`Verified role not found: ${verifiedRoleId}`);
-      await interaction.editReply({ content: 'Server configuration error. Please contact staff.' });
+      await interaction.editReply({ content: '❌  Server configuration error — contact staff.' });
       return;
     }
 
     const member = await guild.members.fetch(userId);
     await member.roles.add(verifiedRole);
 
-    // Update user record
-    user.robloxUsername = robloxUser.name;
-    user.robloxId = robloxUser.id;
-    user.isVerified = true;
-    user.verifiedAt = new Date();
-    user.lastSeen = new Date();
-    user.pendingVerificationCode = undefined;
-    user.pendingRobloxUsername = undefined;
+    // Update DB
+    user.robloxUsername            = robloxUser.name;
+    user.robloxId                  = robloxUser.id;
+    user.isVerified                = true;
+    user.verifiedAt                = new Date();
+    user.lastSeen                  = new Date();
+    user.pendingVerificationCode   = undefined;
+    user.pendingRobloxUsername     = undefined;
     user.pendingVerificationExpiry = undefined;
     await user.save();
 
+    // Clear in-memory code
+    RobloxAPI.clearCode(userId);
+
     await interaction.editReply({
       embeds: [createSuccessEmbed({
-        title: 'Verification Successful',
-        description: 'Your Roblox account has been verified!',
+        title:       'Verification Complete',
+        description: '🎉  Your Roblox account has been linked successfully!',
         fields: [
-          { name: 'Roblox Username', value: robloxUser.name, inline: true },
-          { name: 'Roblox ID', value: robloxUser.id, inline: true },
-          { name: 'Role Added', value: verifiedRole.name, inline: true },
-          { name: 'Next Steps', value: 'Use `/games` to browse scripts and `/getscript` to get them.' },
+          { name: '🎮  Roblox',         value: `[${robloxUser.name}](https://www.roblox.com/users/${robloxUser.id}/profile)`, inline: true },
+          { name: '🪪  Roblox ID',       value: `\`${robloxUser.id}\``,                inline: true  },
+          { name: '🏷️  Role Added',      value: verifiedRole.name,                     inline: true  },
+          { name: '📅  Account Created', value: ts.date(new Date(robloxUser.created)), inline: true  },
+          { name: '🔢  Account Age',     value: RobloxAPI.accountAge(robloxUser.created), inline: true },
+          { name: '📜  Next Steps',      value: 'Use `/games` to browse scripts and `/getscript` to retrieve them.' },
         ],
       })],
     });
 
-    Logger.info(`User ${interaction.user.tag} verified as Roblox: ${robloxUser.name}`);
-
+    Logger.info(`Verified: ${interaction.user.tag} → Roblox: ${robloxUser.name} (${robloxUser.id})`);
   } catch (error) {
-    Logger.error('Error in verify confirm:', error);
-    await interaction.editReply({ content: 'An error occurred during verification. Please try again.' });
+    Logger.error('Error in /verify confirm', error);
+    await interaction.editReply({ content: '❌  An error occurred during verification. Please try again.' });
   }
 }
 
-async function checkStatus(interaction: any) {
+// ─── /verify status ───────────────────────────────────────────
+
+async function checkStatus(interaction: ChatInputCommandInteraction): Promise<void> {
   await interaction.deferReply({ ephemeral: true });
 
   try {
@@ -275,8 +300,8 @@ async function checkStatus(interaction: any) {
     if (!user) {
       await interaction.editReply({
         embeds: [createErrorEmbed({
-          title: 'Not Registered',
-          description: 'You haven\'t interacted with the bot yet. Run `/verify start` to begin.',
+          title:       'Not Registered',
+          description: "You haven't interacted with this bot yet. Run `/verify start` to begin.",
         })],
       });
       return;
@@ -285,11 +310,11 @@ async function checkStatus(interaction: any) {
     if (user.isVerified) {
       await interaction.editReply({
         embeds: [createSuccessEmbed({
-          title: 'Verification Status',
-          description: 'You are **verified**.',
+          title:       'Verification Status',
+          description: '✅  Your Roblox account is verified.',
           fields: [
-            { name: 'Roblox Username', value: user.robloxUsername || 'Unknown', inline: true },
-            { name: 'Verified At', value: user.verifiedAt?.toLocaleDateString() || 'Unknown', inline: true },
+            { name: '🎮  Roblox Username', value: `[${user.robloxUsername}](https://www.roblox.com/users/${user.robloxId}/profile)`, inline: true },
+            { name: '🔗  Verified',        value: ts.relative(user.verifiedAt ?? new Date()),                                         inline: true },
           ],
         })],
       });
@@ -300,13 +325,13 @@ async function checkStatus(interaction: any) {
       const expired = user.pendingVerificationExpiry && user.pendingVerificationExpiry < new Date();
       await interaction.editReply({
         embeds: [createWarningEmbed({
-          title: 'Pending Verification',
+          title:       'Pending Verification',
           description: expired
-            ? 'Your verification code has expired. Run `/verify start` again.'
-            : `You have a pending verification for Roblox user **${user.pendingRobloxUsername}**.\nRun \`/verify confirm\` after adding the code to your profile.`,
+            ? '⏰  Your code has expired. Run `/verify start` again to get a new one.'
+            : `Verification is in progress for Roblox user **${user.pendingRobloxUsername}**.\nRun \`/verify confirm\` after adding the code to your profile.`,
           fields: expired ? [] : [
-            { name: 'Code', value: `\`${user.pendingVerificationCode}\`` },
-            { name: 'Expires', value: user.pendingVerificationExpiry?.toLocaleString() || 'Unknown' },
+            { name: '🔑  Code',    value: `\`${user.pendingVerificationCode}\``,                          inline: true },
+            { name: '⏰  Expires', value: ts.relative(user.pendingVerificationExpiry ?? new Date()),       inline: true },
           ],
         })],
       });
@@ -315,13 +340,12 @@ async function checkStatus(interaction: any) {
 
     await interaction.editReply({
       embeds: [createErrorEmbed({
-        title: 'Not Verified',
-        description: 'You are not verified. Run `/verify start` with your Roblox username to begin.',
+        title:       'Not Verified',
+        description: "You are not verified. Run `/verify start` with your Roblox username to begin.",
       })],
     });
-
   } catch (error) {
-    Logger.error('Error checking verification status:', error);
-    await interaction.editReply({ content: 'An error occurred. Please try again.' });
+    Logger.error('Error in /verify status', error);
+    await interaction.editReply({ content: '❌  An error occurred. Please try again.' });
   }
 }

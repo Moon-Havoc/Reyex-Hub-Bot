@@ -1,18 +1,22 @@
 import 'dotenv/config';
 import { Client, GatewayIntentBits, Collection } from 'discord.js';
-import { connectDatabase } from './utils/database.js';
+import { connectDatabase, disconnectDatabase } from './utils/database.js';
 import { Logger } from './utils/logger.js';
 import { loadCommands } from './handlers/commandHandler.js';
 import { loadEvents } from './handlers/eventHandler.js';
+import type { Command } from './utils/types.js';
 
-// Extend Client interface to include commands
+// ─── Extend Client with typed commands collection ─────────────
+
 declare module 'discord.js' {
   interface Client {
-    commands: Collection<string, any>;
+    commands:  Collection<string, Command>;
+    startedAt: Date;
   }
 }
 
-// Create Discord client
+// ─── Client setup ─────────────────────────────────────────────
+
 const client = new Client({
   intents: [
     GatewayIntentBits.Guilds,
@@ -22,46 +26,60 @@ const client = new Client({
   ],
 });
 
-// Create command collection
-client.commands = new Collection();
+client.commands  = new Collection<string, Command>();
+client.startedAt = new Date();
 
-// Load commands and events
-async function startBot() {
+// ─── Boot sequence ────────────────────────────────────────────
+
+async function startBot(): Promise<void> {
+  Logger.banner('Reyex Hub BOT', {
+    'Node.js':    process.version,
+    'Environment': process.env.NODE_ENV ?? 'production',
+  });
+
+  const token = process.env.DISCORD_TOKEN;
+  if (!token) {
+    Logger.error('DISCORD_TOKEN is not set in environment variables');
+    process.exit(1);
+  }
+
   try {
-    // Connect to database
     await connectDatabase();
-
-    // Load commands
     await loadCommands(client);
-
-    // Load events
     await loadEvents(client);
-
-    // Login to Discord
-    const token = process.env.DISCORD_TOKEN;
-    if (!token) {
-      throw new Error('DISCORD_TOKEN is not set in environment variables');
-    }
-
     await client.login(token);
   } catch (error) {
-    Logger.error('Error starting bot:', error);
+    Logger.error('Fatal error during bot startup', error);
     process.exit(1);
   }
 }
 
-// Handle graceful shutdown
-process.on('SIGINT', async () => {
-  Logger.info('Received SIGINT, shutting down gracefully...');
-  await client.destroy();
+// ─── Graceful shutdown ────────────────────────────────────────
+
+async function shutdown(signal: string): Promise<void> {
+  Logger.info(`Received ${signal} — shutting down…`);
+  try {
+    client.destroy();
+    await disconnectDatabase();
+    Logger.info('Shutdown complete');
+  } catch (error) {
+    Logger.error('Error during shutdown', error);
+  }
   process.exit(0);
+}
+
+process.on('SIGINT',  () => void shutdown('SIGINT'));
+process.on('SIGTERM', () => void shutdown('SIGTERM'));
+
+process.on('unhandledRejection', (reason) => {
+  Logger.error('Unhandled promise rejection', reason);
 });
 
-process.on('SIGTERM', async () => {
-  Logger.info('Received SIGTERM, shutting down gracefully...');
-  await client.destroy();
-  process.exit(0);
+process.on('uncaughtException', (error) => {
+  Logger.error('Uncaught exception', error);
+  process.exit(1);
 });
 
-// Start the bot
+// ─── Go ───────────────────────────────────────────────────────
+
 startBot();

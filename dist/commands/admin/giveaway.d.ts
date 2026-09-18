@@ -1,6 +1,7 @@
+import { ChatInputCommandInteraction } from 'discord.js';
 declare const _default: {
     data: import("discord.js").SlashCommandSubcommandsOnlyBuilder;
-    execute(interaction: any): Promise<void>;
+    execute(interaction: ChatInputCommandInteraction): Promise<void>;
 };
 export default _default;
 //# sourceMappingURL=giveaway.d.ts.map

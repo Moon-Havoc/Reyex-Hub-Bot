@@ -5,35 +5,34 @@ import { createErrorEmbed, createProfileEmbed } from '../../utils/embeds.js';
 export default {
     data: new SlashCommandBuilder()
         .setName('profile')
-        .setDescription('View your profile and verification status')
-        .addUserOption(option => option
-        .setName('user')
-        .setDescription('View another user\'s profile (optional)')
-        .setRequired(false)),
+        .setDescription("View your profile or another member's profile")
+        .addUserOption(opt => opt.setName('user').setDescription('Member to look up (default: yourself)').setRequired(false)),
     async execute(interaction) {
         await interaction.deferReply();
+        const target = interaction.options.getUser('user') ?? interaction.user;
+        const targetId = target.id;
         try {
-            const targetUser = interaction.options.getUser('user') || interaction.user;
-            const targetUserId = targetUser.id;
-            // Get user from database
-            const user = await User.findOne({ discordId: targetUserId });
+            const user = await User.findOne({ discordId: targetId });
             if (!user) {
-                const notFoundEmbed = createErrorEmbed({
-                    title: 'User Not Found',
-                    description: 'This user is not in the database.',
+                await interaction.editReply({
+                    embeds: [createErrorEmbed({
+                            title: 'User Not Found',
+                            description: target.id === interaction.user.id
+                                ? "You don't have a profile yet — run `/verify start` to get one."
+                                : 'That member has no profile in the database.',
+                        })],
                 });
-                await interaction.editReply({ embeds: [notFoundEmbed] });
                 return;
             }
-            // Create branded profile embed
-            const avatarUrl = user.avatar
-                ? `https://cdn.discordapp.com/avatars/${user.discordId}/${user.avatar}.png`
-                : undefined;
-            const profileEmbed = createProfileEmbed({
+            // Prefer Discord CDN avatar from the live user object (fresher than stored hash)
+            const avatarUrl = target.displayAvatarURL({ size: 256, extension: 'png' });
+            const embed = createProfileEmbed({
                 username: user.username,
                 discriminator: user.discriminator,
+                discordId: user.discordId,
                 isVerified: user.isVerified,
                 robloxUsername: user.robloxUsername,
+                robloxId: user.robloxId,
                 scriptsUsed: user.statistics.scriptsUsed,
                 joinedAt: user.joinedAt,
                 lastSeen: user.lastSeen,
@@ -41,12 +40,16 @@ export default {
                 lastScriptUsed: user.statistics.lastScriptUsed,
                 avatar: avatarUrl,
             });
-            await interaction.editReply({ embeds: [profileEmbed] });
-            Logger.info(`User ${interaction.user.tag} viewed profile for ${targetUser.tag}`);
+            // Silently update lastSeen for own-profile views
+            if (target.id === interaction.user.id) {
+                await User.updateOne({ discordId: targetId }, { $set: { lastSeen: new Date() } });
+            }
+            await interaction.editReply({ embeds: [embed] });
+            Logger.info(`Profile viewed: ${interaction.user.tag} → ${target.tag}`);
         }
         catch (error) {
-            Logger.error('Error in profile command:', error);
-            await interaction.editReply({ content: 'An error occurred while fetching the profile. Please try again.' });
+            Logger.error('Error in /profile', error);
+            await interaction.editReply({ content: '❌  An error occurred. Please try again.' });
         }
     },
 };
